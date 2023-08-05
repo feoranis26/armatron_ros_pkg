@@ -1,5 +1,5 @@
 import math
-import socket, threading, time
+import socket, threading, time, serial, os, dbus    
 
 import rclpy
 from rclpy.node import Node
@@ -9,6 +9,9 @@ from std_msgs.msg import Bool, String
 from geometry_msgs.msg import Twist, Point, Pose, PoseStamped, Quaternion, TransformStamped
 from nav_msgs.msg import Odometry
 from tf2_ros import TransformBroadcaster
+from std_srvs.srv import Empty
+
+packet_size = 64
 
 class ArmatronDrive(Node):
     def __init__(self):
@@ -33,6 +36,7 @@ class ArmatronDrive(Node):
 
         self.position = Point()
         self.pose = Pose()
+        self.velocity = Twist()
         self.headingDegrees = 0
         self.heading = 0
 
@@ -60,20 +64,35 @@ class ArmatronDrive(Node):
 
         self.od_cmd_subscriber = self.create_subscription(
             String,
-            '/od_cmd',
+            '/wd_cmd',
             self.on_od_cmd_msg_received,
             1)
+
+        self.shutdown_srv = self.create_service(Empty, 'shutdown', self.shutdown_callback)
 
         self.odom_publisher = self.create_publisher(Odometry, "odom", 10)
         self.tf_broadcaster = TransformBroadcaster(self)
 
         self.timer = self.create_timer(0.1, self.tick)
+        self.timer_serial = self.create_timer(0.01, self.read_serial)
+
+
+        self.buffer = ""
+        self.declare_parameter('serial_port', "/dev/ttyUSB0")
+        self.port = serial.Serial(self.get_parameter('serial_port').value, 115200)
+
+        self.stop_motor_srv = self.create_client(Empty, '/stop_motor')
+        self.motor_stopped = False;
 
     def tick(self):
         if time.time() - self.lastSpeedReceived > 1 and self.speed != Twist():
             self.set_speed(Twist())
 
         self.odom_update()
+
+        if (not self.motor_stopped) and self.stop_motor_srv.service_is_ready():
+            self.stop_motor_srv.call_async(Empty.Request())
+            self.motor_stopped = True;
 
     def odom_update(self):
         self.heading = self.headingDegrees * math.pi / 180
@@ -125,7 +144,7 @@ class ArmatronDrive(Node):
         #self.goto(msg.pose)
 
     def on_od_cmd_msg_received(self, msg):
-        self.send_to(self.wheeldriver_connection, msg)
+        self.send_to(self.wheeldriver_connection, msg.data)
 
 
     def receive_broadcasts(self):
@@ -164,6 +183,9 @@ class ArmatronDrive(Node):
 
                 self.powermanager_connection = connection
 
+                if not self.powermgr_comms_thread.is_alive():
+                    self.powermgr_comms_thread.start()
+
     def wheeldrv_comms(self):
         while True:
             data = self.wheeldriver_connection.recv(1024)
@@ -186,6 +208,21 @@ class ArmatronDrive(Node):
                 self.headingDegrees = float(spl[1])
         except:
             print("Error parsing message: \"" + message + "\"")
+
+    def powermgr_comms(self):
+        while True:
+            data = self.powermanager_connection.recv(1024)
+            data = data.decode("UTF-8")
+
+            spl = data.split('\r')
+
+            for d in spl:
+                self.powermgr_decode(d)
+
+    def powermgr_decode(self, message):
+        if message == "shutdown":
+            self.shutdown()
+            
 
     def process_udp(self, data, sender):
         data = data.decode("UTF-8")
@@ -220,6 +257,7 @@ class ArmatronDrive(Node):
         self.tcp_thread = threading.Thread(target=self.receive_tcp, args=(), daemon=True)
 
         self.wheeldrv_comms_thread = threading.Thread(target=self.wheeldrv_comms, args=(), daemon=True)
+        self.powermgr_comms_thread = threading.Thread(target=self.powermgr_comms, args=(), daemon=True)
 
         self.broadcast_thread.start()
         self.tcp_thread.start()
@@ -228,16 +266,19 @@ class ArmatronDrive(Node):
         if self.powerstate != state:
             if state == True:
                 print("Enable power")
-                self.send_to(self.powermanager_connection, "enable_power")
+                self.broadcast_udp_port.sendto(bytes("enable_power", "utf-8"), (self.powermanager_ip, 11752))
+                #self.send_to(self.powermanager_connection, "enable_power")
             else:
                 print("Disable power")
-                self.send_to(self.powermanager_connection, "disable_power")
+                self.broadcast_udp_port.sendto(bytes("disable_power", "utf-8"), (self.powermanager_ip, 11752))
+                #self.send_to(self.powermanager_connection, "disable_power")
             
             self.powerstate = state
 
     def set_speed(self, speed):
         if (time.time() - self.lastSpeedSent) > 0.1:
-            self.send_to(self.wheeldriver_connection, "set_speed_all " + str(-speed.linear.y) + " " + str(speed.linear.x) + " " + str(speed.angular.z) + " ")
+            self.send_serial(str(-speed.linear.y) + " " + str(speed.linear.x) + " " + str(speed.angular.z) + " ")
+            #self.send_to(self.wheeldriver_connection, "set_speed_all " + str(-speed.linear.y) + " " + str(speed.linear.x) + " " + str(speed.angular.z) + " ")
             self.lastSpeedSent = time.time()
 
         self.speed = speed
@@ -253,6 +294,88 @@ class ArmatronDrive(Node):
     def stop(self):
         self.set_power(False)
 
+    def send_serial(self, data):
+        toSend = padded(padded(str(len(data)), 4) + data, 63) + ";"
+        #print(toSend)
+        self.port.write(bytes(toSend, "ascii"))
+
+    def decode(self, data):
+        index = 0
+        for i in range(3):
+            if data[i] == '#':
+                index = i
+                break
+        if i > 2:
+            return
+        
+        try:
+            data_length = int(data[0:index])
+            data = data[4:data_length + 4]
+
+            split_type = data.split(sep=":")
+            data_type = split_type[0]
+            data = split_type[1].split(sep=",")
+
+
+            if data_type == "heading":
+                self.headingDegrees = float(data[0])
+            elif data_type == "position":
+                self.position.x = float(data[1])
+                self.position.y = -float(data[0])
+            elif data_type == "velocity":
+                self.velocity.linear.x = float(data[1])
+                self.position.linear.y = -float(data[0])
+                self.position.angular.z = float(data[2])
+        except:
+            pass
+
+
+    def parse(self):
+        while len(self.buffer) > packet_size:
+            index = 0
+            for i in range(min(2 * packet_size, len(self.buffer))):
+                if self.buffer[i] == ';':
+                    index = i
+                    break
+            
+            if index <= packet_size:
+                split = self.buffer[0:index]
+
+                if len(split) > 0:
+                    self.decode(split)
+
+                self.buffer = self.buffer[index + 1:]
+            elif index > packet_size and index < 2 * packet_size:
+                self.buffer = self.buffer[index - (packet_size - 1): index + 1]
+            else:
+                self.buffer = self.buffer[packet_size:]
+
+
+    def read_serial(self):
+        try:
+            read = str(self.port.read_all().decode("ascii") )
+
+            self.buffer += read
+        except:
+            pass
+        self.parse()
+
+    def shutdown_callback(self, req, rsp):
+        self.shutdown()
+        return rsp
+    
+    def shutdown(self):
+        sys_bus = dbus.SystemBus()
+        ck_srv = sys_bus.get_object('org.freedesktop.login1',
+                                    '/org/freedesktop/login1')
+        ck_iface = dbus.Interface(ck_srv, 'org.freedesktop.login1.Manager')
+        ck_iface.get_dbus_method("PowerOff")(False)
+
+def padded(data, length):
+        for i in range(len(data), length):
+            data += '#'
+
+        return data
 
 def quaternion_to_euler_angle(w, x, y, z):
     ysqr = y * y
