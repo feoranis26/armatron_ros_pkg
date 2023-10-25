@@ -25,7 +25,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'armatron_drive = armatron.armatron_drive_serial:main',
+            'armatron_drive = armatron.armatron_drive_udp:main',
             'scan_trimmer = armatron.scan_trimmer:main'
         ],
     },

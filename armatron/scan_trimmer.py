@@ -30,12 +30,12 @@ class ScanTrimmer(Node):
         scan.time_increment = msg.time_increment
         scan.scan_time = msg.scan_time
 
-        scan.range_min = 0.3
+        scan.range_min = 0.35
         scan.range_max = msg.range_max
 
 
         for i in msg.ranges:
-            if i > 0.3:
+            if i > 0.35:
                 scan.ranges.append(i)
             else:    
                 scan.ranges.append(float("inf"))

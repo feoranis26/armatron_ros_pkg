@@ -15,27 +15,24 @@ def generate_launch_description():
     }
 
     return LaunchDescription([
-        Node(
-            package="armatron",
-            executable="armatron_drive",
-            name="drive",
-            parameters=[{
-                'serial_port': '/dev/ttyUSB0',
-            }],
-        ),
+        #Node(
+        #    package="armatron",
+        #    executable="armatron_drive",
+        #    name="drive",
+        #),
 
-        Node(
-            package="joy_teleop",
-            executable="joy_teleop",
-            name="joy_teleop"
-        ),
+        #Node(
+        #    package="joy_teleop",
+        #    executable="joy_teleop",
+        #    name="joy_teleop"
+        #),
 
         Node(
             package="rplidar_ros",
             executable="rplidar_composition",
             name="rplidar_pub",
             parameters=[{
-                'serial_port': '/dev/ttyUSB1',
+                'serial_port': '/dev/ttyUSB0',
                 'serial_baudrate': 115200,  # A1 / A2
                 # 'serial_baudrate': 256000, # A3
                 'inverted': False,

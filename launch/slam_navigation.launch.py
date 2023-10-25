@@ -29,7 +29,9 @@ def generate_launch_description():
                     'slam_navigation_params.yaml'
                 ]),
                 'map': "/",
-                "slam": "True"
+                "slam": "True",
+                "use_sim_time": "False",
+                "use_simulator": "False"
             }.items()
         ),
 
