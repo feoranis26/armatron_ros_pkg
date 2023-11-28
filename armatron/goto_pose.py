@@ -43,12 +43,13 @@ class GotoPoseNode(Node):
             return
 
         pose_transformed = tf2_geometry_msgs.do_transform_pose(self.pose, transform)
+        (roll, pitch, yaw) = tf2.transformations.euler_from_quaternion(pose_transformed.rotation)
 
         msg = Twist()
 
         speed_x = min(max(-0.15, pose_transformed.position.x), 0.15)
         speed_y = min(max(-0.15, pose_transformed.positionn.y), 0.15)
-        speed_th = min(max(-0.1, pose_transformed.rotation.z), 0.1)
+        speed_th = min(max(-0.1, yaw), 0.1)
 
         msg.linear.x = float(speed_x)
         msg.linear.y = float(speed_y)
