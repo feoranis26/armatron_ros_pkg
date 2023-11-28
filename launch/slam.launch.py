@@ -27,7 +27,10 @@ def generate_launch_description():
                     FindPackageShare('armatron'),
                     'params',
                     'slam_params.yaml'
-                ])
+                ]),
+                "slam": "True",
+                "use_sim_time": "False",
+                "use_simulator": "False"
             }.items()
         ),
 

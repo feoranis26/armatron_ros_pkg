@@ -46,6 +46,7 @@ slam_toolbox:
     do_loop_closing: true
     coarse_search_angle_offset: 20.0
     use_response_expansion: true
+    enable_interactive_mode: true
     mode: mapping
     
 bt_navigator:

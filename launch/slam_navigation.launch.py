@@ -28,7 +28,18 @@ def generate_launch_description():
                     'params',
                     'slam_navigation_params.yaml'
                 ]),
-                'map': "/",
+                'map_file_name': PathJoinSubstitution([
+                    FindPackageShare('armatron'),
+                    'maps',
+                    'ai_room.map.yaml'
+                ]),
+                'map': PathJoinSubstitution([
+                    FindPackageShare('armatron'),
+                    'maps',
+                    'ai_room.map.yaml'
+                ]),
+                "use_map_file": "True",
+                "use_map_saver": "True",
                 "slam": "True",
                 "use_sim_time": "False",
                 "use_simulator": "False"
