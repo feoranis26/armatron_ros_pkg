@@ -25,7 +25,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'armatron_drive = armatron.armatron_drive_udp_i2c:main',
+            'armatron_drive = armatron.armatron_drive_direct_i2c:main',
             'scan_trimmer = armatron.scan_trimmer:main',
             'goto_pose = armatron.goto_pose:main'
         ],
