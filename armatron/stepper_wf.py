@@ -1,5 +1,6 @@
 import pigpio
 import time
+import sys
 
 from threading import Thread
 
@@ -54,6 +55,7 @@ class Stepper:
             time.sleep(0.01)
 
     def _get_next_state_change_us(self):
+        #print(f"Speed: {abs(self.speed)}")
         if abs(self.speed) <= 1.0:
             return 0
 
@@ -61,18 +63,26 @@ class Stepper:
         return us_per_step + self._last_step_us
 
     def _update_speed(self, current_us):
-        time_delta = (current_us - self._last_speed_update_us) / 1000000.0
+        time_delta = float(current_us - self._last_speed_update_us) / 1000000.0
+        #print(f"time delta: {time_delta} speed change: {self.acc * time_delta}")
         self._last_speed_update_us = current_us
-
+        
         if self.target_speed is not None:
             if self.speed > self.target_speed:
                 self.speed -= self.acc * time_delta
-            else:
+                #if self.speed < self.target_speed:
+                #    self.speed = self.target_speed
+            elif self.speed < self.target_speed:
                 self.speed += self.acc * time_delta
+                #if self.speed > self.target_speed:
+                #    self.speed = self.target_speed
 
             if self._last_dir == 2:
-                self.gpio.write(self.pin_dir, self.speed < 0)
+                self.gpio.write(self._pin_dir, self.speed < 0)
                 self._last_dir = self.speed < 0
+
+            if abs(self.speed - self.target_speed) < 1:
+                self.speed = self.target_speed
 
             return
 
@@ -80,25 +90,27 @@ class Stepper:
             self.speed = 0
             return
 
-        dist_to_stop = (self.speed * self.speed / (self.acc * 2)) * (1 if self.speed > 0 else -1)
+        dist_to_stop = (self.speed * self.speed / (self.acc * 2)) * (1 if self.speed > 0 else -1) * 1.1
 
         if self.position + dist_to_stop > self.target:
             self.speed -= self.acc * time_delta
         else:
             self.speed += self.acc * time_delta
 
-        self.speed = min(max(-self.max_speed, self.speed), self.max_speed)
-
     def _step_now(self, current_us):
         self._last_step_us = current_us
+
+        self.speed = min(max(-self.max_speed, self.speed), self.max_speed)
+        if abs(self.speed) < 1:
+            self.speed = 0
 
         pulse = step_pulse()
         pulse.up = 0
         pulse.down = 0
 
-        if self.speed < 0 and self._last_dir == 1:
+        if self._last_dir == 1:
             pulse.up |= 1 << self._pin_dir
-        elif self.speed > 0 and self._last_dir == 0:
+        elif self._last_dir == 0:
             pulse.down |= 1 << self._pin_dir
 
         if (self.speed > 0) != self._last_dir:
@@ -137,9 +149,6 @@ class StepperWaveformTransmitter:
     def __init__(self, plan_length_us, gpio):
         self.planning_len = plan_length_us
 
-        self.transmitting_wave = None
-        self.next_wave = None
-
         self.gpio = gpio
 
     def add_stepper(self, stepper):
@@ -166,6 +175,7 @@ class StepperWaveformTransmitter:
 
         last_speed_update_us = start_us
 
+        start_ns = time.time_ns()
         while current_us < self.planning_len and num_pulses < MAX_PULSES:
             stepper_to_step = None
             next_step_us = -1
@@ -195,7 +205,7 @@ class StepperWaveformTransmitter:
             if current_us > self.planning_len:
                 break
 
-            if (current_us + start_us) - last_speed_update_us > 1000:
+            if (current_us + start_us) - last_speed_update_us > 100:
                 for stepper in self.steppers:
                     stepper._update_speed(current_us + start_us)
 
@@ -237,6 +247,9 @@ class StepperWaveformTransmitter:
             pulses.append(full_pulse)
             num_pulses += 1
 
+        end_ns = time.time_ns()
+        #print(f"Planning took {(end_ns-start_ns) / 1000000.0} ms")
+
         #print(f"Plan end! Pulses: {num_pulses}")
 
         if current_us < self.planning_len:
@@ -253,41 +266,62 @@ class StepperWaveformTransmitter:
         assert new_wave >= 0, "Wave crete failed!"
 
         return new_wave, current_us
+    
+    def create_and_transmit(self):
+        (new_wave, length) = self.create_wave(self.current_time)
 
-    def wait_and_send(self):
-        current_wave = self.gpio.wave_tx_at()
-        while current_wave == self.transmitting_wave:
-            current_wave = self.gpio.wave_tx_at()
-            time.sleep(self.planning_len / 100000000)
-
-        #print(f"WF {self.transmitting_wave} ended!")
-        self.current_time += self.planning_len
-        self.gpio.wave_delete(self.transmitting_wave)
-        self.transmitting_wave = self.next_wave
-
-        (next_wave, length) = self.create_wave(self.current_time)
-        self.next_wave = next_wave
-
-        res = self.gpio.wave_send_using_mode(next_wave, pigpio.WAVE_MODE_ONE_SHOT_SYNC)
+        #print(f"Sending: {new_wave}")
+        res = self.gpio.wave_send_using_mode(new_wave, pigpio.WAVE_MODE_ONE_SHOT_SYNC)
         assert res >= 0, "Wave send failed!"
 
+        self.current_time += self.planning_len
+        return new_wave
+
         #print(f"Queued WF {next_wave}")
+    
+    def wait_tx_end(self):
+        wait_wave = self.gpio.wave_tx_at()
+        current_wave = wait_wave
+
+        while current_wave == wait_wave:
+            current_wave = self.gpio.wave_tx_at()
+            time.sleep((self.planning_len * 0.1) / 1000000)
+
+        #print(f"{wait_wave} ended!")
+        return wait_wave
+
+    def wait_and_fill_buffer(self):
+        check_wave = self.gpio.wave_tx_at()
+
+        wf_index = self.waves.index(check_wave)
+        #print(f"WF #{wf_index}")
+
+        if wf_index != 0:
+            print("Underrun!", file=sys.stderr)
+        else:
+            self.wait_tx_end()
+
+        for i in range(0, wf_index + 1).__reversed__():
+            wave_id = self.waves.pop(i)
+            #print(f"Deleting wave #{i}, id: {wave_id}")
+            self.gpio.wave_delete(wave_id)
+        #print(f"Waited for {(start_ns - end_ns) / 1000000.0} ms")
+        
+
+        while len(self.waves) < 2:
+            wave = self.create_and_transmit()
+            self.waves.append(wave)
+
 
     def thread_loop(self):
         print("Started thread!")
-        (self.transmitting_wave, length) = self.create_wave(0)
-        self.current_time = self.planning_len
-        (self.next_wave, length) = self.create_wave(self.planning_len)
 
-        res = self.gpio.wave_send_using_mode(self.transmitting_wave, pigpio.WAVE_MODE_ONE_SHOT_SYNC)
-        assert res >= 0, "Wave send failed!"
-
-        res = self.gpio.wave_send_using_mode(self.next_wave, pigpio.WAVE_MODE_ONE_SHOT_SYNC)
-        assert res >= 0, "Wave send failed!"
+        self.waves.append(self.create_and_transmit())
+        self.waves.append(self.create_and_transmit())
 
         print("Starting loop!")
         while not self.stop_flag:
-            self.wait_and_send()
+            self.wait_and_fill_buffer()
 
     planning_len = 0
     current_time = 0
@@ -298,8 +332,7 @@ class StepperWaveformTransmitter:
     gen_thread = None
     stop_flag = False
 
-    transmitting_wave = 0
-    next_wave = 0
+    wf_count = 0
 
 
 if __name__ == "__main__":
@@ -307,14 +340,14 @@ if __name__ == "__main__":
     pi = pigpio.pi()
     pi.wave_clear()
 
-    tx = StepperWaveformTransmitter(10000, pi)
-    stepper = Stepper(6, 12, 1000, 1000, pi)
+    tx = StepperWaveformTransmitter(50000, pi)
+    stepper = Stepper(6, 12, 12800, 12800, pi)
 
     tx.add_stepper(stepper)
     tx.start()
     print("Started!")
 
-    stepper.set_tgt_pos(10000)
+    stepper.set_tgt_pos(-128000)
     time.sleep(0.25)
 
     while abs(stepper.speed) > 0:

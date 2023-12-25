@@ -18,8 +18,10 @@ from geometry_msgs.msg import Twist, Point, Pose, PoseStamped, Quaternion, Trans
 from nav_msgs.msg import Odometry
 from tf2_ros import TransformBroadcaster
 
-from .whl_udp import WheelDriver
-from .imu_udp import IMU
+import board
+import adafruit_bno055
+
+from .whl_direct import WheelDriver
 
 class ArmatronDrive(Node):
     def __init__(self):
@@ -61,24 +63,22 @@ class ArmatronDrive(Node):
         self.odom_publisher = self.create_publisher(Odometry, "odom", 10)
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        self.timer = self.create_timer(0.05, self.tick)
-        self.timer = self.create_timer(0.2, self.drive_tick)
+        self.create_timer(0.05, self.tick)
+        self.create_timer(0.05, self.drive_tick)
 
         self.absolute = False
 
-        self.driver = WheelDriver("10.8.1.2", 11753)
-        self.bus = SMBus(1)
-        self.imu = MPU9250.MPU9250(self.bus, 0x68)
-        self.imu.begin()
+        self.driver = WheelDriver()
+        self.driver.start()
 
-        self.sensorfusion = kalman.Kalman()
+        self.i2c = board.I2C()
+        self.imu = adafruit_bno055.BNO055_I2C(self.i2c)
+            #exit()
         
         #package_share_directory = get_package_share_directory('mpu9250_ros')
         #self.imu.loadCalibDataFromFile(package_share_directory + "/calib.json")
 
         self.stop_event = threading.Event()
-        self.imu_daemon = threading.Thread(target=self.gyro_integrate, daemon=True)
-        self.imu_daemon.start()
 
         self.heading = 0.0
         self.angular_speed = 0.0
@@ -87,13 +87,36 @@ class ArmatronDrive(Node):
         self.pid = PID(0.2, 0.05, 0.0, setpoint=0)
 
     def stop(self):
-        self.driver.drive(0, 0, 0)
         self.stop_event.set()
-        super().stop()
+
+        self.driver.stop()
+        #super().stop()
 
     def tick(self):
         #if time.time() - self.lastSpeedReceived > 1 and self.speed != Twist():
         #    self.set_speed(Twist())
+
+        read_yaw = self.imu.euler[0]
+        if read_yaw is not None:
+            self.heading = -(read_yaw / 180.0) * 3.1415
+
+        #quat = self.imu.quaternion
+        quaternion = Quaternion()
+
+        #if quat is not None:
+        try:
+            #quaternion.x = quat[0]
+            #quaternion.y = quat[1]
+            #quaternion.z = quat[2]
+            #quaternion.w = quat[3]
+            quaternion.x = 0.0
+            quaternion.y = 0.0
+            quaternion.z = math.sin(self.heading / 2)
+            quaternion.w = math.cos(self.heading / 2)
+
+            self.orientation = quaternion
+        except AssertionError:
+            pass
 
         self.odom_update()
 
@@ -126,19 +149,16 @@ class ArmatronDrive(Node):
     def drive_tick(self):
         print(self.heading)
         print(self.position)
+        print(self.driver.position)
         print(self.tgt_speed)
         print(self.odom_speed)
-        print("Kalmanroll:{0} KalmanPitch:{1} KalmanYaw:{2} ".format(self.sensorfusion.roll, self.sensorfusion.pitch, self.sensorfusion.yaw))
+        print(f"Calib sys, gyro, acc, mag: {self.imu.calibration_status}")
 
-        self.driver.drive(self.speed_x, self.speed_y, self.speed_th)# self.tgt_speed[2])
+        self.driver.drive(self.speed_x, self.speed_y, self.speed_th)
+        #self.driver.drive(0, 0, 0)
+        self.driver.update()
 
     def odom_update(self):
-        quaternion = Quaternion()
-        quaternion.x = 0.0
-        quaternion.y = 0.0
-        quaternion.z = math.sin(self.heading / 2)
-        quaternion.w = math.cos(self.heading / 2)
-
         transform_stamped_msg = TransformStamped()
         transform_stamped_msg.header.stamp = (self.get_clock().now() + Duration(seconds=0.2)).to_msg()
         transform_stamped_msg.header.frame_id = self.odom_frame_id
@@ -146,10 +166,10 @@ class ArmatronDrive(Node):
         transform_stamped_msg.transform.translation.x = self.position.x
         transform_stamped_msg.transform.translation.y = self.position.y
         transform_stamped_msg.transform.translation.z = 0.0
-        transform_stamped_msg.transform.rotation.x = quaternion.x
-        transform_stamped_msg.transform.rotation.y = quaternion.y
-        transform_stamped_msg.transform.rotation.z = quaternion.z
-        transform_stamped_msg.transform.rotation.w = quaternion.w
+        transform_stamped_msg.transform.rotation.x = self.orientation.x
+        transform_stamped_msg.transform.rotation.y = self.orientation.y
+        transform_stamped_msg.transform.rotation.z = self.orientation.z
+        transform_stamped_msg.transform.rotation.w = self.orientation.w
 
         self.tf_broadcaster.sendTransform(transform_stamped_msg)
 
@@ -159,7 +179,7 @@ class ArmatronDrive(Node):
         odom.pose.pose.position.x = self.position.x
         odom.pose.pose.position.y = self.position.y
         odom.pose.pose.position.z = 0.0
-        odom.pose.pose.orientation = quaternion
+        odom.pose.pose.orientation = self.orientation
         odom.child_frame_id = self.base_frame_id
         odom.twist.twist.linear.x = self.odom_speed[0]
         odom.twist.twist.linear.y = self.odom_speed[1]
@@ -186,24 +206,6 @@ class ArmatronDrive(Node):
         self.tgt_speed[0] = speed.linear.x
         self.tgt_speed[1] = speed.linear.y
         self.tgt_speed[2] = min(max(speed.angular.z, -0.25), 0.25)
-
-    def gyro_integrate(self):
-        last = time.time()
-        while not self.stop_event.is_set():
-            self.imu.readSensor()
-
-            current = time.time()
-            delta = current - last
-            last = current
-
-            self.imu.computeOrientation()
-            self.sensorfusion.computeAndUpdateRollPitchYaw(self.imu.AccelVals[0], self.imu.AccelVals[1], self.imu.AccelVals[2], self.imu.GyroVals[0], self.imu.GyroVals[1], self.imu.GyroVals[2],
-                                self.imu.MagVals[0], self.imu.MagVals[1], self.imu.MagVals[2], delta)
-
-
-
-            self.angular_speed = -self.imu.GyroVals[2] + 0.00055
-            self.heading += self.angular_speed * delta
 
 
 def quaternion_to_euler_angle(w, x, y, z):
@@ -239,12 +241,13 @@ def main(args=None):
 
     drive_node = ArmatronDrive()
 
-    rclpy.spin(drive_node)
+    try:
+        rclpy.spin(drive_node)
+    finally:
+        drive_node.stop()
+        drive_node.destroy_node()
 
-    drive_node.stop()
-    drive_node.destroy_node()
-
-    rclpy.shutdown()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
