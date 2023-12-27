@@ -73,6 +73,7 @@ class ArmatronDrive(Node):
 
         self.i2c = board.I2C()
         self.imu = adafruit_bno055.BNO055_I2C(self.i2c)
+        self.imu.mode = adafruit_bno055.IMUPLUS_MODE
             #exit()
         
         #package_share_directory = get_package_share_directory('mpu9250_ros')

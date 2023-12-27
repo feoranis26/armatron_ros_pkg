@@ -293,18 +293,22 @@ class StepperWaveformTransmitter:
     def wait_and_fill_buffer(self):
         check_wave = self.gpio.wave_tx_at()
 
-        wf_index = self.waves.index(check_wave)
-        #print(f"WF #{wf_index}")
+        if check_wave != 9999:
+            wf_index = self.waves.index(check_wave)
+            #print(f"WF #{wf_index}")
 
-        if wf_index != 0:
-            print("Underrun!", file=sys.stderr)
+            if wf_index != 0:
+                print("Underrun!", file=sys.stderr)
+            else:
+                self.wait_tx_end()
+
+            for i in range(0, wf_index + 1).__reversed__():
+                wave_id = self.waves.pop(i)
+                #print(f"Deleting wave #{i}, id: {wave_id}")
+                self.gpio.wave_delete(wave_id)
         else:
-            self.wait_tx_end()
-
-        for i in range(0, wf_index + 1).__reversed__():
-            wave_id = self.waves.pop(i)
-            #print(f"Deleting wave #{i}, id: {wave_id}")
-            self.gpio.wave_delete(wave_id)
+            self.gpio.wave_clear()
+            self.waves.clear()
         #print(f"Waited for {(start_ns - end_ns) / 1000000.0} ms")
         
 
@@ -314,14 +318,19 @@ class StepperWaveformTransmitter:
 
 
     def thread_loop(self):
-        print("Started thread!")
+        while True:
+            try:
+                print("Started thread!")
+                self.gpio.wave_clear()
 
-        self.waves.append(self.create_and_transmit())
-        self.waves.append(self.create_and_transmit())
+                self.waves.append(self.create_and_transmit())
+                self.waves.append(self.create_and_transmit())
 
-        print("Starting loop!")
-        while not self.stop_flag:
-            self.wait_and_fill_buffer()
+                print("Starting loop!")
+                while not self.stop_flag:
+                    self.wait_and_fill_buffer()
+            except Exception:
+                print(f"Caught exception in thread!")
 
     planning_len = 0
     current_time = 0

@@ -21,10 +21,10 @@ class WheelDriver:
         self.gpio = pigpio.pi()
         self.gpio.wave_clear()
 
-        self.lf = Stepper(12, 6, 6400, 6400, self.gpio)
-        self.rf = Stepper(16, 13, 6400, 6400, self.gpio)
-        self.rb = Stepper(20, 19, 6400, 6400, self.gpio)
-        self.lb = Stepper(21, 26, 6400, 6400, self.gpio)
+        self.lf = Stepper(12, 6, 25600, 3200, self.gpio)
+        self.rf = Stepper(16, 13, 25600, 3200, self.gpio)
+        self.rb = Stepper(20, 19, 25600, 3200, self.gpio)
+        self.lb = Stepper(21, 26, 25600, 3200, self.gpio)
 
         self.tx = StepperWaveformTransmitter(50000, self.gpio)
 
@@ -52,14 +52,15 @@ class WheelDriver:
         rb_s =   f_rps    + r_rps  + th_rps
         lb_s =   -f_rps   + r_rps  - th_rps
 
-        self.lf.set_tgt_speed(lf_s)
-        self.rf.set_tgt_speed(-rf_s)
-        self.rb.set_tgt_speed(-rb_s)
-        self.lb.set_tgt_speed(lb_s)
+        self.lf.set_tgt_speed(-lf_s)
+        self.rf.set_tgt_speed(rf_s)
+        self.rb.set_tgt_speed(rb_s)
+        self.lb.set_tgt_speed(-lb_s)
 
     def update(self):
-        if abs(self.lf.speed) <= 1 and abs(self.rf.speed) <= 1 and abs(self.rb.speed) <= 1 and abs(self.lb.speed) <= 1:
+        if abs(self.lf.speed) <= 25 and abs(self.rf.speed) <= 25 and abs(self.rb.speed) <= 25 and abs(self.lb.speed) <= 25:
             self.gpio.write(5, 0)
+            #self.drive(0, 0, 0)
         else:
             self.gpio.write(5, 1)
              

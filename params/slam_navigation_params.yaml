@@ -50,6 +50,7 @@ slam_toolbox:
     use_response_expansion: true
     mode: mapping
     use_sim_time: false
+    enable_interactive_mode: true
 
 bt_navigator:
   ros__parameters:

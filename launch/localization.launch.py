@@ -31,7 +31,7 @@ def generate_launch_description():
                 'map': PathJoinSubstitution([
                     FindPackageShare('armatron'),
                     'maps',
-                    'room.map.yaml'
+                    'lab_map.yaml'
                 ])
             }.items()
         ),

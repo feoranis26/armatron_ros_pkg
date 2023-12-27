@@ -50,9 +50,9 @@ def generate_launch_description():
             ])
         ),
 
-        Node(
-            package="armatron",
-            executable="scan_trimmer",
-            name="scan_trimmer"
-        ),
+        #Node(
+        #    package="armatron",
+        #    executable="scan_trimmer",
+        #    name="scan_trimmer"
+        #),
     ])

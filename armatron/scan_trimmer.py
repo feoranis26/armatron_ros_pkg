@@ -21,6 +21,7 @@ class ScanTrimmer(Node):
         
     def on_scan_received(self, msg):
         scan = LaserScan()
+        #print(f"Received message with {len(msg.ranges)}")
 
         scan.header = msg.header
         scan.angle_min = msg.angle_min
@@ -40,6 +41,7 @@ class ScanTrimmer(Node):
             else:    
                 scan.ranges.append(float("inf"))
 
+        #print(f"Publishing message with {len(scan.ranges)}")
         self.scan_publisher.publish(scan)
 
     
