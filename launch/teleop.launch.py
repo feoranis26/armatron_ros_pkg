@@ -38,6 +38,9 @@ def generate_launch_description():
                 'inverted': False,
                 'angle_compensate': True,
             }],
+            remappings=[
+                ('/scan', '/scan_raw'),
+            ],
         ),
 
         IncludeLaunchDescription(

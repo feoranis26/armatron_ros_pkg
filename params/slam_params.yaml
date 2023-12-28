@@ -36,11 +36,11 @@ amcl:
     z_max: 0.05
     z_rand: 0.5
     z_short: 0.05
-    scan_topic: scan_trimmed
+    scan_topic: scan
 
 slam_toolbox:
   ros__parameters:
-    scan_topic: /scan_trimmed
+    scan_topic: /scan
     map_update_interval: 1.0
     scan_buffer_size: 1000
     do_loop_closing: true
