@@ -15,7 +15,7 @@ from tf2_ros import TransformListener, Buffer
 from std_msgs.msg import Bool
 from geometry_msgs.msg import Twist, Point, Pose, PoseStamped, Quaternion, TransformStamped, Vector3
 
-class ArmatronDrive(Node):
+class HeadingHoldController(Node):
     def __init__(self):
         super().__init__("goto_pose")
 
@@ -48,7 +48,7 @@ class ArmatronDrive(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    drive_node = ArmatronDrive()
+    drive_node = HeadingHoldController()
 
     try:
         rclpy.spin(drive_node)
