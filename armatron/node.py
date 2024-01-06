@@ -23,6 +23,7 @@ import adafruit_bno055
 
 from .whl_direct import WheelDriver
 
+
 class ArmatronDrive(Node):
     def __init__(self):
         super().__init__("armatron_drive")
@@ -64,7 +65,7 @@ class ArmatronDrive(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
 
         self.create_timer(0.05, self.tick)
-        self.create_timer(0.05, self.drive_tick)
+        self.create_timer(0.5, self.print_status)
 
         self.absolute = False
 
@@ -94,8 +95,8 @@ class ArmatronDrive(Node):
         #super().stop()
 
     def tick(self):
-        #if time.time() - self.lastSpeedReceived > 1 and self.speed != Twist():
-        #    self.set_speed(Twist())
+        if time.time() - self.lastSpeedReceived > 1:
+            self.set_speed(Twist())
 
         read_yaw = self.imu.euler[0]
         if read_yaw is not None:
@@ -147,17 +148,16 @@ class ArmatronDrive(Node):
         self.odom_speed[0] = self.driver.speed[0] * math.cos(self.heading) + -self.driver.speed[1] * math.sin(self.heading)
         self.odom_speed[1] = self.driver.speed[1] * math.cos(self.heading) + self.driver.speed[0] * math.sin(self.heading)
 
-    def drive_tick(self):
+        self.driver.drive(self.speed_x, self.speed_y, self.speed_th)
+        self.driver.update()
+
+    def print_status(self):
         print(self.heading)
         print(self.position)
         print(self.driver.position)
         print(self.tgt_speed)
         print(self.odom_speed)
         print(f"Calib sys, gyro, acc, mag: {self.imu.calibration_status}")
-
-        self.driver.drive(self.speed_x, self.speed_y, self.speed_th)
-        #self.driver.drive(0, 0, 0)
-        self.driver.update()
 
     def odom_update(self):
         transform_stamped_msg = TransformStamped()

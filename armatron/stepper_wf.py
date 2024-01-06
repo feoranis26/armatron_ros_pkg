@@ -318,7 +318,7 @@ class StepperWaveformTransmitter:
 
 
     def thread_loop(self):
-        while True:
+        while not self.stop_flag:
             try:
                 print("Started thread!")
                 self.gpio.wave_clear()

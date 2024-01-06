@@ -15,11 +15,14 @@ def generate_launch_description():
     }
 
     return LaunchDescription([
-        #Node(
-        #    package="armatron",
-        #    executable="armatron_drive",
-        #    name="drive",
-        #),
+        Node(
+            package="armatron",
+            executable="armatron_drive",
+            name="armatron/drive",
+            parameters=[{
+                'silent': True,
+            }],
+        ),
 
         #Node(
         #    package="joy_teleop",
@@ -30,7 +33,7 @@ def generate_launch_description():
         Node(
             package="rplidar_ros",
             executable="rplidar_composition",
-            name="rplidar_pub",
+            name="armatron/rplidar_pub",
             parameters=[{
                 'serial_port': '/dev/ttyUSB0',
                 'serial_baudrate': 115200,  # A1 / A2
@@ -53,9 +56,9 @@ def generate_launch_description():
             ])
         ),
 
-        #Node(
-        #    package="armatron",
-        #    executable="scan_trimmer",
-        #    name="scan_trimmer"
-        #),
+        Node(
+            package="armatron",
+            executable="scan_trimmer",
+            name="armatron/scan_trimmer"
+        ),
     ])
