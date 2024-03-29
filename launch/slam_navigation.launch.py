@@ -26,7 +26,7 @@ def generate_launch_description():
                 'params_file': PathJoinSubstitution([
                     FindPackageShare('armatron'),
                     'params',
-                    'slam_navigation_params.yaml'
+                    'slam_navigation_params_DWB.yaml'
                 ]),
                 'map_file_name': PathJoinSubstitution([
                     FindPackageShare('armatron'),
