@@ -10,13 +10,19 @@ class ScanTrimmer(Node):
     def __init__(self):
         super().__init__("scan_trimmer")
 
+        self.raw_scan_topic = self.declare_parameter(
+          'raw_scan_topic', 'scan_raw').get_parameter_value().string_value
+        
+        self.processed_scan_topic = self.declare_parameter(
+          'processed_scan_topic', 'scan').get_parameter_value().string_value
+
         self.scan_subscriber = self.create_subscription(
             LaserScan,
-            '/scan_raw',
+            self.raw_scan_topic,
             self.on_scan_received,
             1)
 
-        self.scan_publisher = self.create_publisher(LaserScan, "scan", 1)
+        self.scan_publisher = self.create_publisher(LaserScan, self.processed_scan_topic, 1)
 
     def on_scan_received(self, msg):
         scan = LaserScan()
