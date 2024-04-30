@@ -59,6 +59,6 @@ def generate_launch_description():
         Node(
             package="armatron",
             executable="scan_trimmer",
-            name="armatron/scan_trimmer"
+            name="scan_trimmer"
         ),
     ])
