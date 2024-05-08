@@ -61,6 +61,11 @@ class ArmatronDrive(Node):
             "/hold_heading",
             self.on_hold_service_called)
 
+        self.reset_service = self.create_service(
+            Empty,
+            "/odom_reset",
+            self.on_reset_service_called)
+
         self.odom_publisher = self.create_publisher(Odometry, "odom", 10)
         self.tf_broadcaster = TransformBroadcaster(self)
 
@@ -74,7 +79,7 @@ class ArmatronDrive(Node):
 
         self.i2c = board.I2C()
         self.imu = adafruit_bno055.BNO055_I2C(self.i2c)
-        self.imu.mode = adafruit_bno055.IMUPLUS_MODE
+        #self.imu.mode = adafruit_bno055.IMUPLUS_MODE
             #exit()
         
         #package_share_directory = get_package_share_directory('mpu9250_ros')
@@ -152,16 +157,15 @@ class ArmatronDrive(Node):
         self.driver.update()
 
     def print_status(self):
-        print(self.heading)
-        print(self.position)
-        print(self.driver.position)
-        print(self.tgt_speed)
-        print(self.odom_speed)
-        print(f"Calib sys, gyro, acc, mag: {self.imu.calibration_status}")
+        self.get_logger().debug(f"Heading:\t\t {self.heading}")
+        self.get_logger().debug(f"Position:\t\t {self.position}")
+        self.get_logger().debug(f"Tgt speed:\t\t {self.tgt_speed}")
+        self.get_logger().debug(f"Odom speed: {self.odom_speed}")
+        self.get_logger().debug(f"Calib sys, gyro, acc, mag: {self.imu.calibration_status}")
 
     def odom_update(self):
         transform_stamped_msg = TransformStamped()
-        transform_stamped_msg.header.stamp = (self.get_clock().now() + Duration(seconds=0.2)).to_msg()
+        transform_stamped_msg.header.stamp = (self.get_clock().now() + Duration(seconds=0.1)).to_msg()
         transform_stamped_msg.header.frame_id = self.odom_frame_id
         transform_stamped_msg.child_frame_id = self.base_frame_id
         transform_stamped_msg.transform.translation.x = self.position.x
@@ -188,6 +192,7 @@ class ArmatronDrive(Node):
         self.odom_publisher.publish(odom)
 
     def on_vel_msg_received(self, msg):
+        self.get_logger().debug(f"Received spd msg l x: {msg.linear.x} y: {msg.linear.y} z: {msg.linear.z} a x: {msg.angular.x} y: {msg.angular.y} z: {msg.angular.z}")
         self.set_speed(msg)
         self.lastSpeedReceived = time.time()
 
@@ -195,11 +200,22 @@ class ArmatronDrive(Node):
         self.hold = msg.value
 
     def on_hold_service_called(self, request, response):
-        print("Hold heading!")
+        self.get_logger().info("Hold heading!")
         if self.hold == 0.0:
             self.hold = self.heading
         else:
             self.hold = 0.0
+
+        return response
+
+    def on_reset_service_called(self, request, response):
+        self.get_logger().info("Reset odometry!")
+        
+        self.position = Point()
+        self.pose = Pose()
+        self.heading = 0
+
+        self.last_position = [0, 0]
 
         return response
 
