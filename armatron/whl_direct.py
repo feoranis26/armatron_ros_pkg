@@ -9,8 +9,8 @@ ROTS_PER_METER = 2
 ROTS_PER_MPS = 2
 ROTS_PER_RADS_PS = 1
 
-STEPS_PER_ROT = 6400
-MAX_ROT = 4800
+STEPS_PER_ROT = 3200
+MAX_ROT = 3200
 
 class WheelDriver:
     def __init__(self) -> None:
@@ -74,6 +74,11 @@ class WheelDriver:
     def update(self):
         if abs(self.lf.speed) <= 25 and abs(self.rf.speed) <= 25 and abs(self.rb.speed) <= 25 and abs(self.lb.speed) <= 25:
             self.gpio.write(5, 0)
+
+            self.last_lf_position = self.lf.position
+            self.last_rf_position = self.rf.position
+            self.last_rb_position = self.rb.position
+            self.last_lb_position = self.lb.position
             #self.drive(0, 0, 0)
         else:
             self.gpio.write(5, 1)
