@@ -26,6 +26,7 @@ setup(
     entry_points={
         'console_scripts': [
             'drive = armatron.node:main',
+            'drive_2wd = armatron.node_udp_2wd:main',
             'drive_serial = armatron.node_i2c:main',
             'drive_tcp = armatron.node_i2c:main',
             'drive_udp_i2c = armatron.node_i2c:main',
