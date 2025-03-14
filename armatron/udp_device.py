@@ -54,7 +54,7 @@ class UDPDevice:
 
         while True:
             try:
-                data, sender = self.port.recvfrom(1024)
+                data, _ = self.port.recvfrom(1024)
             except TimeoutError:
                 continue
             except ConnectionRefusedError:
@@ -75,11 +75,6 @@ class UDPDevice:
                 data = data.removesuffix(self.pkt_footer)
 
             data = data.decode("UTF-8")
-
-            if data == self.device_name:
-                self.remote = s_ip
-                continue
-
             datas = data.split(";")
 
             for s in datas:
@@ -96,11 +91,6 @@ class UDPDevice:
 
     def connection_thread(self):
         while True:
-            time.sleep(0.2)
-
-            if self.remote is None:
-                continue
-
             try:
                 if millis() - self.last_message > 1000:
                     self.send("connect")
@@ -109,6 +99,8 @@ class UDPDevice:
                     self.send("ok")
             except ConnectionRefusedError:
                 print("Connection refused!")
+
+            time.sleep(0.2)
 
     def process(self, tokens):
         pass

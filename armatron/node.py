@@ -84,7 +84,7 @@ class ArmatronDrive(Node):
         #self.imu.mode = adafruit_bno055.IMUPLUS_MODE
             #exit()
 
-        self.gyro = UDPGyro("127.0.0.1", 11755, 11756)
+        self.gyro = UDPGyro("127.0.0.1", 11755, 11757)
         self.gyro.start()
         
         #package_share_directory = get_package_share_directory('mpu9250_ros')
