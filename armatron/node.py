@@ -21,7 +21,8 @@ from tf2_ros import TransformBroadcaster
 import board
 import adafruit_bno055
 
-from .whl_direct import WheelDriver
+from .whl_udp import WheelDriver
+from .gyro_udp import UDPGyro
 
 
 class ArmatronDrive(Node):
@@ -35,7 +36,7 @@ class ArmatronDrive(Node):
         self.pose = Pose()
         self.heading = 0
 
-        self.last_position = [0, 0]
+        self.last_position = [float("nan"), float("nan")]
 
         self.base_frame_id = "base_link"
         self.odom_frame_id = "odom"
@@ -74,13 +75,17 @@ class ArmatronDrive(Node):
 
         self.absolute = False
 
-        self.driver = WheelDriver()
+        self.driver = WheelDriver("127.0.0.1", 11753, 11754)
+        #self.driver = WheelDriver()
         self.driver.start()
 
-        self.i2c = board.I2C()
-        self.imu = adafruit_bno055.BNO055_I2C(self.i2c)
+        #self.i2c = board.I2C()
+        #self.imu = adafruit_bno055.BNO055_I2C(self.i2c)
         #self.imu.mode = adafruit_bno055.IMUPLUS_MODE
             #exit()
+
+        self.gyro = UDPGyro("127.0.0.1", 11755, 11756)
+        self.gyro.start()
         
         #package_share_directory = get_package_share_directory('mpu9250_ros')
         #self.imu.loadCalibDataFromFile(package_share_directory + "/calib.json")
@@ -97,13 +102,15 @@ class ArmatronDrive(Node):
         self.stop_event.set()
 
         self.driver.stop()
+        self.gyro.stop()
         #super().stop()
 
     def tick(self):
         if time.time() - self.lastSpeedReceived > 1:
             self.set_speed(Twist())
 
-        read_yaw = self.imu.euler[0]
+        #read_yaw = self.imu.euler[0]
+        read_yaw = self.gyro.angle
         if read_yaw is not None:
             self.heading = -(read_yaw / 180.0) * 3.1415
 
@@ -140,6 +147,10 @@ class ArmatronDrive(Node):
         else:
             self.speed_th = self.tgt_speed[2]
 
+        if math.isnan(self.last_position[0]) and math.isnan(self.last_position[1]):
+            self.last_position[0] = self.driver.position[0]
+            self.last_position[1] = self.driver.position[1]
+
         pos_diff = [self.last_position[0] - self.driver.position[0], self.last_position[1] - self.driver.position[1]]
         if self.last_position[0] == 0 and self.last_position[1] == 0:
             pos_diff = [0, 0]
@@ -161,7 +172,9 @@ class ArmatronDrive(Node):
         self.get_logger().debug(f"Position:\t\t {self.position}")
         self.get_logger().debug(f"Tgt speed:\t\t {self.tgt_speed}")
         self.get_logger().debug(f"Odom speed: {self.odom_speed}")
-        self.get_logger().debug(f"Calib sys, gyro, acc, mag: {self.imu.calibration_status}")
+
+        print(self.gyro.angle)
+        #self.get_logger().debug(f"Calib sys, gyro, acc, mag: {self.imu.calibration_status}")
 
     def odom_update(self):
         transform_stamped_msg = TransformStamped()
@@ -222,7 +235,7 @@ class ArmatronDrive(Node):
     def set_speed(self, speed):
         self.tgt_speed[0] = speed.linear.x
         self.tgt_speed[1] = speed.linear.y
-        self.tgt_speed[2] = min(max(speed.angular.z, -0.25), 0.25)
+        self.tgt_speed[2] = speed.angular.z
 
 
 def quaternion_to_euler_angle(w, x, y, z):

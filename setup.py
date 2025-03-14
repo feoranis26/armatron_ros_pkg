@@ -32,7 +32,8 @@ setup(
             'drive_udp_i2c = armatron.node_i2c:main',
             'drive_udp = armatron.node_i2c:main',
             'scan_trimmer = armatron.scan_trimmer:main',
-            'goto_pose = armatron.goto_pose:main'
+            'goto_pose = armatron.goto_pose:main',
+            'gyro_pub = armatron.gyro_pub:main'
         ],
     },
 )

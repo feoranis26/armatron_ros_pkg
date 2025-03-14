@@ -9,8 +9,8 @@ ROTS_PER_METER = 2
 ROTS_PER_MPS = 2
 ROTS_PER_RADS_PS = 1
 
-STEPS_PER_ROT = 3200
-MAX_ROT = 3200
+STEPS_PER_ROT = -3200
+MAX_ROT = 25600
 
 class WheelDriver:
     def __init__(self) -> None:
@@ -23,7 +23,7 @@ class WheelDriver:
         self.gpio.wave_clear()
 
         self.lf = Stepper(12, 6, 25600, MAX_ROT, self.gpio)
-        self.rf = Stepper(16, 13, 25600, MAX_ROT, self.gpio)
+        self.rf = Stepper(16, 11, 25600, MAX_ROT, self.gpio)
         self.rb = Stepper(20, 19, 25600, MAX_ROT, self.gpio)
         self.lb = Stepper(21, 26, 25600, MAX_ROT, self.gpio)
 
