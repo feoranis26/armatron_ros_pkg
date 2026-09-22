@@ -5,6 +5,8 @@ import numpy as np
 
 import board
 import adafruit_bno055
+import errno
+import time
 
 from .udp_device import UDPDevice
 
@@ -38,14 +40,32 @@ class GyroPublisher():
         self.recv_thr.start()
 
     def thread(self):
+        failures = 0
+
         while True:
             time.sleep(0.025)
 
             if self.remote is None:
                 continue
 
-            read_yaw = self.imu.euler[0]
-            self.send(f"angle:{read_yaw};")
+            try:
+                euler = self.imu.euler
+                read_yaw = euler[0]
+
+                if read_yaw is None:
+                    continue
+
+                failures = 0
+                self.send(f"angle:{read_yaw};")
+
+            except OSError as e:
+                if e.errno == errno.EREMOTEIO:
+                    failures += 1
+                    print(f"BNO055 I2C read failed ({failures}): {e}")
+                    time.sleep(0.1)
+                    continue
+
+                raise
 
     def send(self, data):
         send_data = bytes(data, "utf-8")
@@ -125,11 +145,11 @@ def get_quaternion_from_euler(roll, pitch, yaw):
 
 
 def main(args=None):
-    pub = GyroPublisher("127.0.0.1", 11755)
+    pub = GyroPublisher("0.0.0.0", 11755)
 
     while True:
-        pub.print_status()
         time.sleep(10)
+    #    pub.print_status()
 
 if __name__ == '__main__':
     main()
