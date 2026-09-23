@@ -113,14 +113,34 @@ def run(args):
         return (healthy() and values['still_since'] is not None and
                 time.monotonic()-values['still_since'] >= 1.)
 
+    def checked_state():
+        current = load_state(args.root)
+        if (current['active_profile'] != state['active_profile'] or current['mode'] != state['mode'] or
+                original_revision != [(revision/name).stat().st_mtime_ns for name in ('map.posegraph', 'map.data', 'grid/map.yaml')]):
+            raise RuntimeError('Selected profile, mode or map revision changed during relocalization')
+        return current
+
     def accept(request, response):
         if not values['searching']:
             response.success, response.message = False, 'Not searching'
         elif not still() or time.monotonic()-values['amcl_at'] > 2.:
             response.success, response.message = False, 'Need fresh AMCL pose and one second stationary with healthy odometry'
         else:
-            values['accepted'] = copy.deepcopy(values['amcl'])
-            response.success, response.message = True, 'Pose accepted by operator; verifying SLAM handoff'
+            accepted = copy.deepcopy(values['amcl'])
+            try:
+                current = checked_state()
+                x, y, yaw = planar_pose(accepted)
+                current.update(mode='localization', last_pose={'x': x, 'y': y, 'yaw': yaw})
+                save_state(current, args.root)
+            except (OSError, ValueError, RuntimeError) as error:
+                response.success, response.message = False, 'Could not save accepted pose: '+str(error)
+                return response
+            state['mode'] = 'localization'
+            values['accepted'] = accepted
+            values['searching'] = False
+            status('ACCEPTED_SAVED: operator AMCL pose saved as localization restart hint; SLAM handoff not yet verified')
+            response.success, response.message = True, 'Accepted pose saved; verifying SLAM handoff'
+
         return response
 
     subscriptions = [
@@ -144,7 +164,7 @@ def run(args):
                 if child.poll() is not None:
                     raise RuntimeError('Localization process exited; inspect '+str(directory))
             if require_still and not still():
-                raise RuntimeError('Motion or odometry interruption during handoff; pose not saved')
+                raise RuntimeError('Motion or odometry interruption during handoff; accepted AMCL pose retained')
             if predicate():
                 return
             if time.monotonic() >= deadline:
@@ -347,15 +367,17 @@ def run(args):
                 return mismatch('SLAM scan-time TF disagrees', actual)
             verified.append(stamp)
             return len(verified) >= 3 and verified[-1]-verified[0] >= 1.
-        wait(takeover, 30., lambda: 'SLAM takeover not verified; recovered pose not saved. '+diagnostic[0], True)
-        current = load_state(args.root)
-        if (current['active_profile'] != state['active_profile'] or current['mode'] != state['mode'] or
-                original_revision != [(revision/name).stat().st_mtime_ns for name in ('map.posegraph', 'map.data', 'grid/map.yaml')]):
-            raise RuntimeError('Selected profile, mode or map revision changed during relocalization')
+        wait(takeover, 30., lambda: 'SLAM takeover not verified; accepted AMCL pose retained. '+diagnostic[0], True)
+        current = checked_state()
         x, y, yaw = planar_pose(values['slam'])
         current.update(mode='localization', last_pose={'x': x, 'y': y, 'yaw': yaw})
         save_state(current, args.root)
         status('VERIFIED: recovered pose saved. Ending bootstrap; keep robot stationary, then start armatron-navigation.service.')
+    except (RuntimeError, OSError) as error:
+        if values['accepted'] is not None:
+            status('HANDOFF_FAILED: '+str(error)+
+                   '. Operator-accepted pose was saved; navigation remains stopped.')
+        raise
     finally:
         cleanup_errors = []
         for child in list(reversed(children)):

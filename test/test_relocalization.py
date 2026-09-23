@@ -46,7 +46,7 @@ class RelocalizationTest(unittest.TestCase):
         self.assertEqual(args.func.__name__, 'command_relocalize')
 
 class OrchestrationTest(unittest.TestCase):
-    def exercise(self, bad_slam=False, competing=False, existing_tf=False, transient_tf=False, bad_tf=False):
+    def exercise(self, bad_slam=False, competing=False, existing_tf=False, transient_tf=False, bad_tf=False, lost_heading=False, save_failure=False):
         import tempfile
         from pathlib import Path
         from unittest.mock import patch
@@ -126,7 +126,7 @@ class OrchestrationTest(unittest.TestCase):
             callbacks['/tf'](NS(transforms=[NS(
                 header=NS(frame_id='map' if existing_tf else 'odom'),
                 child_frame_id='odom' if existing_tf else 'base_link')]))
-            callbacks['/odometry/heading_ready'](NS(data=True))
+            callbacks['/odometry/heading_ready'](NS(data=not (lost_heading and 'accepted_saved' in events)))
             callbacks['/odometry/filtered'](NS(twist=NS(twist=NS(linear=NS(x=0., y=0.), angular=NS(z=0.)))))
             callbacks['/scan'](None)
             for child in children:
@@ -135,7 +135,14 @@ class OrchestrationTest(unittest.TestCase):
                     msg = pose(x=3. if bad_slam and is_slam else 0.)
                     msg.header.stamp = stamp()
                     callbacks['/pose' if is_slam else '/amcl_pose'](msg)
-            services['/armatron/relocalize/accept'](None, NS())
+            response = services['/armatron/relocalize/accept'](None, NS())
+            if response.success:
+                # Acceptance must be durable before the service replies, even
+                # before AMCL has been stopped or SLAM started.
+                self.assertEqual(load_state(root)['last_pose']['x'], 0.)
+                self.assertEqual(load_state(root)['mode'], 'localization')
+                self.assertNotIn('start:localization_slam_toolbox_node', events)
+                events.append('accepted_saved')
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             revision = root/'maps/test/current'
@@ -164,11 +171,16 @@ class OrchestrationTest(unittest.TestCase):
             args = NS(root=root, timeout=10., distance_tolerance=.3, angle_tolerance=.25)
             with patch.dict(sys.modules, modules), patch.object(recovery, 'os', NS(name='posix', killpg=killpg)), \
                  patch.object(recovery.time, 'monotonic', side_effect=lambda: clock[0]), \
-                 patch.object(recovery.subprocess, 'Popen', side_effect=Child):
-                if bad_slam or competing or existing_tf or bad_tf:
+                 patch.object(recovery.subprocess, 'Popen', side_effect=Child), \
+                 patch.object(recovery, 'save_state', side_effect=OSError('read-only') if save_failure else save_state):
+                if bad_slam or competing or existing_tf or bad_tf or lost_heading or save_failure:
                     with self.assertRaises(RuntimeError): recovery.run(args)
-                    self.assertEqual(load_state(root)['mode'], 'mapping')
-                    self.assertIsNone(load_state(root)['last_pose'])
+                    if competing or existing_tf or save_failure:
+                        self.assertEqual(load_state(root)['mode'], 'mapping')
+                        self.assertIsNone(load_state(root)['last_pose'])
+                    else:
+                        self.assertEqual(load_state(root)['mode'], 'localization')
+                        self.assertEqual(load_state(root)['last_pose']['x'], 0.)
                 else:
                     recovery.run(args)
                     self.assertEqual(load_state(root)['mode'], 'localization')
@@ -181,7 +193,7 @@ class OrchestrationTest(unittest.TestCase):
         self.assertLess(events.index('stop:amcl'), events.index('start:localization_slam_toolbox_node'))
         self.assertLess(events.index('clear_tf'), events.index('seed_slam'))
 
-    def test_bad_takeover_does_not_replace_saved_pose(self):
+    def test_bad_takeover_retains_operator_accepted_pose(self):
         self.exercise(bad_slam=True)
 
     def test_existing_navigation_refuses_before_starting_children(self):
@@ -194,5 +206,13 @@ class OrchestrationTest(unittest.TestCase):
     def test_startup_tf_disagreement_can_settle_before_deadline(self):
         self.exercise(transient_tf=True)
 
-    def test_persistent_tf_disagreement_never_saves_pose(self):
+    def test_persistent_tf_disagreement_retains_operator_accepted_pose(self):
         self.exercise(bad_tf=True)
+
+    def test_heading_loss_after_acceptance_retains_pose(self):
+        self.exercise(lost_heading=True)
+
+    def test_save_failure_refuses_acceptance_and_does_not_start_slam(self):
+        events = self.exercise(save_failure=True)
+        self.assertNotIn('accepted_saved', events)
+        self.assertNotIn('start:localization_slam_toolbox_node', events)

@@ -49,7 +49,9 @@ ros2 service call /armatron/relocalize/accept std_srvs/srv/Trigger '{}'
 ```
 
 This is a stage-one manual convergence decision. A `success: true` acceptance
-response means handoff has begun, not that handoff succeeded. Watch the original
+response means the accepted AMCL pose has been saved and handoff has begun, not
+that handoff succeeded. Saving happens before the service replies; a write failure
+rejects acceptance and does not begin handoff. Watch the original
 command for its final result. It refuses acceptance without a fresh map pose,
 fresh heading/scans/filtered odometry, and at least one second stationary.
 
@@ -60,8 +62,9 @@ requires at least three distinct subsequent SLAM poses spanning one second,
 plus TF agreement, while the robot remains stationary. Default discrepancy limits
 are 0.3 m and 0.25 rad; these are handoff checks, not claims of localization accuracy.
 
-After `VERIFIED` and successful command exit, the recovered SLAM pose is saved as
-`last_pose` and the profile mode becomes `localization`. The temporary SLAM process
+Acceptance immediately saves the AMCL pose as `last_pose` and switches the profile
+to `localization` mode. After `VERIFIED` and successful command exit, the verified
+SLAM pose replaces that hint. The temporary SLAM process
 is stopped. Keep the robot stationary and start normal navigation:
 
 ```bash
@@ -78,8 +81,9 @@ robot during that interval. Seamless lifecycle takeover comes in a later stage.
 Search times out after 300 seconds; `--timeout` changes this. `--distance-tolerance`
 and `--angle-tolerance` configure handoff checks. An incorrect SLAM result, gyro
 loss, movement during handoff, process failure, duplicate AMCL/slam_toolbox nodes or service
-timeout fails the command; no recovered pose is persisted. A profile/mode/revision
-change during the run also prevents persistence. Ctrl+C cleans up owned processes.
+timeout fails the command; an already accepted AMCL pose remains saved and
+navigation stays stopped. A profile/mode/revision change prevents writes to the
+changed selection. Failures before acceptance preserve the prior restart hint. Ctrl+C cleans up owned processes.
 The command does not restart navigation on success or failure and cannot prevent
 someone independently starting another launch; do not start one during recovery.
 
@@ -106,5 +110,9 @@ verification deadline. Each disagreement clears the accumulated passing samples;
 three distinct matching updates spanning one second are still required. This
 allows SLAM's asynchronously published, forward-stamped TF to settle after seeding.
 The terminal and status log include accepted/observed poses and metric errors;
-a persistent mismatch fails without saving the recovered pose. Tolerances are
+a persistent mismatch fails while retaining the operator-accepted AMCL pose. Tolerances are
 unchanged.
+
+If handoff fails after acceptance, the saved AMCL hint can seed a later normal
+localization startup. It is a pose at acceptance time, not proof that localization
+is currently ready; moving the robot afterward can make the hint stale.
