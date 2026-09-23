@@ -59,6 +59,9 @@ def generate_launch_description():
             'bt_navigator.ros__parameters.default_nav_to_pose_bt_xml': PathJoinSubstitution([
                 FindPackageShare('armatron'), 'behavior_trees', 'navigate_to_pose_no_backup.xml'
             ]),
+            'bt_navigator.ros__parameters.default_nav_through_poses_bt_xml': PathJoinSubstitution([
+                FindPackageShare('armatron'), 'behavior_trees', 'navigate_through_poses_no_backup.xml'
+            ]),
         },
         convert_types=True,
     )
