@@ -5,7 +5,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
+User=feoranis
 Environment=ARMATRON_WORKSPACE=/home/feoranis/dev_ws
 ExecStart=/home/feoranis/dev_ws/install/armatron/lib/armatron/run-armatron ros2 run armatron gyro_pub
 KillSignal=SIGINT

@@ -81,3 +81,13 @@ status` and `journalctl -u`.
 
 The service paths assume `/home/feoranis/dev_ws`. Update
 `ARMATRON_WORKSPACE`, `User`, and `ExecStart` if the deployment path differs.
+
+The gyro service runs as `feoranis`, using that user's Python packages
+(`adafruit-blinka` and `adafruit-circuitpython-bno055`). That user must have
+read/write access to the Pi's I2C device. Check `ls -l /dev/i2c-*` and
+`id feoranis`; if the device belongs to group `i2c`, grant access with
+`sudo usermod -aG i2c feoranis`, then restart the gyro service. The separate
+motor-controller service retains its root user for pigpio.
+
+After updating a linked unit file, run `sudo systemctl daemon-reload` and
+restart the affected service. Unit-only changes do not require a colcon build.
