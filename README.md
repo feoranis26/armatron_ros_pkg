@@ -48,6 +48,15 @@ ros2 launch armatron visualization.launch.py
 
 ## Fused odometry and map profiles
 
+For a fresh local odometry session during diagnosis, place the robot stationary
+on the floor and run `bash ./src/armatron/systemd/reset-odometry.sh` on the x86
+(adjust the checkout directory name if needed). This stops navigation and
+teleop, then restarts the drive bridge and hardware group, including RF2O and
+the EKF. Navigation and teleop stay stopped; explicitly start teleop to resume
+manual testing. The Pi safety latch is preserved. Raw drive heading still uses
+the gyro and does not share RF2O's zero starting heading. Restart localization
+and provide an initial pose as needed before resuming navigation after a reset.
+
 `navigation.launch.py` starts RF2O as `/odom/rf2o` with TF disabled, and
 `robot_localization` as the sole `odom -> base_link` authority. The stepper
 estimate remains available at `/odom/drive_raw` for comparison and for the
