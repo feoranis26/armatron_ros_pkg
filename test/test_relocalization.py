@@ -46,7 +46,7 @@ class RelocalizationTest(unittest.TestCase):
         self.assertEqual(args.func.__name__, 'command_relocalize')
 
 class OrchestrationTest(unittest.TestCase):
-    def exercise(self, bad_slam=False, competing=False):
+    def exercise(self, bad_slam=False, competing=False, existing_tf=False):
         import tempfile
         from pathlib import Path
         from unittest.mock import patch
@@ -119,6 +119,10 @@ class OrchestrationTest(unittest.TestCase):
                 events.append('stop:'+child.executable)
         def spin(node, **kwargs):
             clock[0] += .1
+            # Match Humble's actual one-argument subscription dispatch.
+            callbacks['/tf'](NS(transforms=[NS(
+                header=NS(frame_id='map' if existing_tf else 'odom'),
+                child_frame_id='odom' if existing_tf else 'base_link')]))
             callbacks['/odometry/heading_ready'](NS(data=True))
             callbacks['/odometry/filtered'](NS(twist=NS(twist=NS(linear=NS(x=0., y=0.), angular=NS(z=0.)))))
             callbacks['/scan'](None)
@@ -158,7 +162,7 @@ class OrchestrationTest(unittest.TestCase):
             with patch.dict(sys.modules, modules), patch.object(recovery, 'os', NS(name='posix', killpg=killpg)), \
                  patch.object(recovery.time, 'monotonic', side_effect=lambda: clock[0]), \
                  patch.object(recovery.subprocess, 'Popen', side_effect=Child):
-                if bad_slam or competing:
+                if bad_slam or competing or existing_tf:
                     with self.assertRaises(RuntimeError): recovery.run(args)
                     self.assertEqual(load_state(root)['mode'], 'mapping')
                     self.assertIsNone(load_state(root)['last_pose'])
@@ -179,3 +183,7 @@ class OrchestrationTest(unittest.TestCase):
 
     def test_existing_navigation_refuses_before_starting_children(self):
         self.assertFalse(any(e.startswith('start:') for e in self.exercise(competing=True)))
+
+    def test_existing_map_tf_refuses_with_humble_single_argument_callback(self):
+        events = self.exercise(existing_tf=True)
+        self.assertFalse(any(e.startswith('start:') for e in events))

@@ -68,9 +68,12 @@ def run(args):
 
     tf_sources = {}
 
-    def transforms(msg, info):
+    def transforms(msg):
         if any(t.header.frame_id == 'map' and t.child_frame_id == 'odom' for t in msg.transforms):
-            tf_sources[bytes(info.publisher_gid)] = time.monotonic()
+            # Humble rclpy supplies only the message, not publisher metadata.
+            # This detects an existing TF owner during preflight. Runtime
+            # duplicate checks below use the known localization node names.
+            tf_sources['map_odom'] = time.monotonic()
 
     def status(text):
         print(text, flush=True)
@@ -135,8 +138,8 @@ def run(args):
         deadline = time.monotonic()+timeout
         while rclpy.ok():
             rclpy.spin_once(node, timeout_sec=.05)
-            if sum(time.monotonic()-at < 2. for at in tf_sources.values()) > 1:
-                raise RuntimeError('Multiple map -> odom TF publishers detected')
+            if sum(name in ('amcl', 'slam_toolbox') for name in node.get_node_names()) > 1:
+                raise RuntimeError('Multiple AMCL/slam_toolbox localization nodes detected')
             for child in children:
                 if child.poll() is not None:
                     raise RuntimeError('Localization process exited; inspect '+str(directory))
@@ -284,6 +287,8 @@ def run(args):
         lifecycle('/amcl', 4, 2)
         stop(amcl_process)
         stop(map_process)
+        wait(lambda: not any(name in ('amcl', 'map_server') for name in node.get_node_names()),
+             10., 'AMCL/map server still visible after shutdown')
         tf_sources.clear()
         buffer.clear()  # Discard the previous owner's future-dated TF cache.
         if not still():

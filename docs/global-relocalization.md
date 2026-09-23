@@ -77,7 +77,7 @@ robot during that interval. Seamless lifecycle takeover comes in a later stage.
 
 Search times out after 300 seconds; `--timeout` changes this. `--distance-tolerance`
 and `--angle-tolerance` configure handoff checks. An incorrect SLAM result, gyro
-loss, movement during handoff, process failure, duplicate TF publishers or service
+loss, movement during handoff, process failure, duplicate AMCL/slam_toolbox nodes or service
 timeout fails the command; no recovered pose is persisted. A profile/mode/revision
 change during the run also prevents persistence. Ctrl+C cleans up owned processes.
 The command does not restart navigation on success or failure and cannot prevent
@@ -94,3 +94,9 @@ location; check scan alignment and continuity of map->base_link across handoff.
 
 The legacy standalone `amcl` mode and `global-localize` remain available for
 manual diagnostics. They do not perform this SLAM handoff.
+
+Humble's Python subscription callbacks provide no per-message publisher identity.
+Preflight detects any observed map->odom transform; during the owned session the
+command checks for multiple AMCL/slam_toolbox nodes and waits for AMCL discovery
+to disappear before starting SLAM. An unrelated, differently named TF publisher
+started after preflight cannot be identified by this check.
