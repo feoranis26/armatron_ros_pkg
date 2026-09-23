@@ -7,7 +7,7 @@ for reproducible fresh imports:
 
 ```bash
 vcs import src < src/armatron_ros_pkg/dependencies/rf2o_laser_odometry.repos
-colcon build --symlink-install --packages-select rf2o_laser_odometry
+bash src/armatron_ros_pkg/systemd/build.sh rf2o_laser_odometry
 ```
 
 The fork contains the diagnostics and Humble dependency metadata corrections;

@@ -13,7 +13,7 @@ From the workspace (adjust the ARMATRON checkout name):
 git -C src/rf2o_laser_odometry remote set-url origin https://github.com/feoranis26/rf2o_laser_odometry.git
 git -C src/rf2o_laser_odometry fetch origin
 git -C src/rf2o_laser_odometry switch --track origin/confidence-diagnostics
-colcon build --symlink-install --packages-select rf2o_laser_odometry
+bash src/armatron/systemd/build.sh rf2o_laser_odometry
 ./src/armatron/systemd/refresh.sh x86
 ros2 topic echo /lidar/confidence
 ```

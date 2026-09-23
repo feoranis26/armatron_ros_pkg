@@ -197,6 +197,19 @@ The helper clears only `build/armatron` and `install/armatron` before building.
 This avoids stale setuptools manifests and symlinks retaining a deleted launch
 file such as `amcl.launch.py`.
 
+Refresh builds in a fresh child environment sourced only from
+`/opt/ros/humble/setup.bash`. This avoids treating the workspace's previous
+installation as an underlay and warning about the just-removed install path.
+Your interactive shell is unchanged. `ARMATRON_ROS_SETUP` can select another
+underlay setup file; custom compiler/library environment variables are not
+inherited. For a build without restarting services, including RF2O, use:
+
+```bash
+bash ./src/armatron/systemd/build.sh rf2o_laser_odometry
+```
+
+With no package argument, this helper builds `armatron`.
+
 The linker refuses to replace a regular file, reloads systemd, and does not
 enable or start any unit. Run `systemd-analyze verify` before enabling a target.
 The units intentionally use

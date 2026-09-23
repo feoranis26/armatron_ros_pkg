@@ -16,7 +16,7 @@ cd "${workspace}"
 # its old launch-file links in the package-local install tree. Both are
 # disposable package outputs; leave every other workspace package untouched.
 rm -rf "${workspace}/build/armatron" "${workspace}/install/armatron"
-colcon build --symlink-install --packages-select armatron
+bash "${script_dir}/build.sh" armatron
 sudo "${script_dir}/install.sh" "${host}"
 
 if [[ ${host} == pi ]]; then
