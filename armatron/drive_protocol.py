@@ -14,8 +14,9 @@ class WheelDriver(UDPDevice):
 
         self.speed_wheels = [0, 0, 0, 0]
 
-        self.speed = [0, 0]
+        self.speed = [0, 0, 0]
         self.position = [0, 0]
+        self.safety_inhibited = False
 
         self.pkt_header = bytes([0xFA])
         self.pkt_footer = bytes([0xFB])
@@ -32,11 +33,16 @@ class WheelDriver(UDPDevice):
             values = data[1].split(",")
             self.speed[0] = float(values[0]) / ROTS_PER_METER
             self.speed[1] = float(values[1]) / ROTS_PER_METER
+            if len(values) > 2:
+                self.speed[2] = float(values[2])
 
         if data[0] == "pos":
             values = data[1].split(",")
             self.position[0] = float(values[0]) / ROTS_PER_METER
             self.position[1] = float(values[1]) / ROTS_PER_METER
+
+        if data[0] == "safety":
+            self.safety_inhibited = data[1] == "1"
 
     """def print_thread(self):
         while True:
@@ -53,6 +59,12 @@ class WheelDriver(UDPDevice):
     def drive(self, x, y, theta):
         #print(f"whl {x * ROTS_PER_MPS} {-y * ROTS_PER_MPS} {theta * ROTS_PER_RADS_PS}")
         self.send(f"whl {x * ROTS_PER_MPS} {-y * ROTS_PER_MPS} {theta * ROTS_PER_RADS_PS}")
+
+    def safety_stop(self):
+        self.send("safety_stop")
+
+    def safety_reset(self):
+        self.send("safety_reset")
 
     def update(self):
         pass

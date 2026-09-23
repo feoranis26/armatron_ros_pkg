@@ -1,0 +1,8 @@
+rf2o_laser_odometry:
+  ros__parameters:
+    laser_scan_topic: /scan
+    odom_topic: /odom/rf2o
+    base_frame_id: base_link
+    odom_frame_id: odom
+    publish_tf: false
+    freq: 10.0

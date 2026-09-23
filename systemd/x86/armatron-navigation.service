@@ -8,9 +8,11 @@ Type=simple
 User=feoranis
 Environment=ARMATRON_WORKSPACE=/home/feoranis/dev_ws
 Environment=ROS_DOMAIN_ID=67
+StateDirectory=armatron
 ExecStart=/home/feoranis/dev_ws/install/armatron/lib/armatron/run-armatron ros2 launch armatron navigation.launch.py slam:=True
+ExecStop=/home/feoranis/dev_ws/install/armatron/lib/armatron/run-armatron armatron-map save --timeout 20
 KillSignal=SIGINT
-TimeoutStopSec=15
+TimeoutStopSec=30
 Restart=no
 
 [Install]

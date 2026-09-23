@@ -46,6 +46,34 @@ Start the committed RViz layout with:
 ros2 launch armatron visualization.launch.py
 ```
 
+## Fused odometry and map profiles
+
+`navigation.launch.py` starts RF2O as `/odom/rf2o` with TF disabled, and
+`robot_localization` as the sole `odom -> base_link` authority. The stepper
+estimate remains available at `/odom/drive_raw` for comparison and for the
+motion-consistency monitor. A persistent disagreement latches the Pi drive
+inhibit; reset it only after investigating with:
+
+```text
+ros2 service call /motion_consistency/reset std_srvs/srv/Empty
+```
+
+Navigation requires an explicit map profile. Runtime state defaults to
+`/var/lib/armatron` under the systemd service and can be redirected with
+`ARMATRON_STATE_DIR` for developer testing:
+
+```text
+armatron-map new primary
+armatron-map select primary --mode mapping
+# drive and map, then stop navigation cleanly to serialize a revision
+armatron-map set-mode localization
+armatron-map status
+```
+
+Mapping saves are staged and retain the prior revision. Localization mode never
+updates the selected posegraph. RF2O source remains external; see
+`dependencies/README.md` before building on a new x86 workspace.
+
 ## systemd installation
 
 All service units explicitly set `ROS_DOMAIN_ID=67`. Set the same value in

@@ -9,11 +9,29 @@ from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.actions import Node
 from nav2_common.launch import RewrittenYaml
+
+from armatron.map_state import load_state, profile_dir
 
 
 def generate_launch_description():
     holonomic = LaunchConfiguration('holonomic')
+    state = load_state()
+    active_profile = state['active_profile']
+    if not active_profile:
+        raise RuntimeError(
+            'No active ARMATRON map profile. Run: armatron-map select <profile>')
+    selected_profile = profile_dir(active_profile)
+    map_file = selected_profile / 'current' / 'map'
+    last_pose = state.get('last_pose')
+    map_start_pose = ([last_pose['x'], last_pose['y'], last_pose['yaw']]
+                      if last_pose and map_file.with_suffix('.posegraph').exists()
+                      else [0.0, 0.0, 0.0])
+    if state['mode'] == 'localization' and not map_file.with_suffix('.posegraph').exists():
+        raise RuntimeError(
+            f'Profile {active_profile!r} has no saved posegraph. Select mapping mode to create one.')
+
     params = RewrittenYaml(
         source_file=PathJoinSubstitution([
             FindPackageShare('armatron'), 'config', 'nav2', 'navigation.yaml'
@@ -33,18 +51,36 @@ def generate_launch_description():
                 ["'[-2.0, -0.5, -3.0]' if '", holonomic,
                  "'.lower() == 'true' else '[-2.0, 0.0, -3.0]'"]
             ),
+            'slam_toolbox.ros__parameters.mode': state['mode'],
+            'slam_toolbox.ros__parameters.map_file_name': (
+                str(map_file) if map_file.with_suffix('.posegraph').exists() else ''
+            ),
+            'slam_toolbox.ros__parameters.map_start_pose': str(map_start_pose),
+            'bt_navigator.ros__parameters.default_nav_to_pose_bt_xml': PathJoinSubstitution([
+                FindPackageShare('armatron'), 'behavior_trees', 'navigate_to_pose_no_backup.xml'
+            ]),
         },
         convert_types=True,
     )
 
     return LaunchDescription([
         DeclareLaunchArgument('holonomic', default_value='false'),
-        DeclareLaunchArgument('slam', default_value='False'),
+        DeclareLaunchArgument('slam', default_value='True'),
         DeclareLaunchArgument(
             'map',
             default_value=PathJoinSubstitution([
                 FindPackageShare('armatron'), 'maps', 'ai_room.map.yaml'
             ]),
+        ),
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(PathJoinSubstitution([
+                FindPackageShare('armatron'), 'launch', 'odometry.launch.py'
+            ])),
+        ),
+        Node(
+            package='armatron',
+            executable='pose_persistence',
+            name='map_pose_persistence',
         ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([

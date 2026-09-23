@@ -3,13 +3,11 @@ import time
 
 import rclpy
 from rclpy.node import Node
-from rclpy.duration import Duration
 
 from std_msgs.msg import Float64
 from std_srvs.srv import Empty
-from geometry_msgs.msg import Twist, Point, Quaternion, TransformStamped
+from geometry_msgs.msg import Twist, Point, Quaternion
 from nav_msgs.msg import Odometry
-from tf2_ros import TransformBroadcaster
 
 from .drive_protocol import WheelDriver
 from .gyro_protocol import UDPGyro
@@ -56,8 +54,13 @@ class ArmatronDrive(Node):
             "/odom_reset",
             self.on_reset_service_called)
 
-        self.odom_publisher = self.create_publisher(Odometry, "odom", 10)
-        self.tf_broadcaster = TransformBroadcaster(self)
+        # This is an observation from open-loop step pulses, never the
+        # authoritative odom -> base_link transform.
+        self.odom_publisher = self.create_publisher(Odometry, "/odom/drive_raw", 10)
+        self.safety_stop_service = self.create_service(
+            Empty, "/drive/safety_stop", self.on_safety_stop)
+        self.safety_reset_service = self.create_service(
+            Empty, "/drive/safety_reset", self.on_safety_reset)
 
         self.create_timer(0.05, self.tick)
         self.create_timer(0.5, self.print_status)
@@ -165,20 +168,6 @@ class ArmatronDrive(Node):
 
 
     def odom_update(self):
-        transform_stamped_msg = TransformStamped()
-        transform_stamped_msg.header.stamp = (self.get_clock().now() + Duration(seconds=0.1)).to_msg()
-        transform_stamped_msg.header.frame_id = self.odom_frame_id
-        transform_stamped_msg.child_frame_id = self.base_frame_id
-        transform_stamped_msg.transform.translation.x = self.position.x
-        transform_stamped_msg.transform.translation.y = self.position.y
-        transform_stamped_msg.transform.translation.z = 0.0
-        transform_stamped_msg.transform.rotation.x = self.orientation.x
-        transform_stamped_msg.transform.rotation.y = self.orientation.y
-        transform_stamped_msg.transform.rotation.z = self.orientation.z
-        transform_stamped_msg.transform.rotation.w = self.orientation.w
-
-        self.tf_broadcaster.sendTransform(transform_stamped_msg)
-
         odom = Odometry()
         odom.header.stamp = self.get_clock().now().to_msg()
         odom.header.frame_id = self.odom_frame_id
@@ -189,8 +178,18 @@ class ArmatronDrive(Node):
         odom.child_frame_id = self.base_frame_id
         odom.twist.twist.linear.x = self.odom_speed[0]
         odom.twist.twist.linear.y = self.odom_speed[1]
-        odom.twist.twist.angular.z = self.angular_speed
+        odom.twist.twist.angular.z = self.driver.speed[2]
         self.odom_publisher.publish(odom)
+
+    def on_safety_stop(self, request, response):
+        self.driver.safety_stop()
+        self.get_logger().error("Drive safety inhibit requested")
+        return response
+
+    def on_safety_reset(self, request, response):
+        self.driver.safety_reset()
+        self.get_logger().warn("Drive safety inhibit reset requested")
+        return response
 
     def on_vel_msg_received(self, msg):
         self.get_logger().debug(f"Received spd msg l x: {msg.linear.x} y: {msg.linear.y} z: {msg.linear.z} a x: {msg.angular.x} y: {msg.angular.y} z: {msg.angular.z}")
