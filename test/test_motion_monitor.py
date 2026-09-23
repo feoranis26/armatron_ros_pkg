@@ -1,6 +1,7 @@
 """Exercise the real ROS callbacks with in-memory message/publisher stand-ins."""
 import importlib.util
 import math
+import json
 from pathlib import Path
 import sys
 import time
@@ -56,6 +57,8 @@ def odom(t, x, vx):
 
 class MonitorTest(unittest.TestCase):
     def feed(self, m, t, speed, x, ack=False):
+        m.on_confidence(Message(data=json.dumps({'schema': 1, 'stamp': t,
+                        'state': 'CONSISTENT', 'candidate_state': 'CONSISTENT'})))
         m.on_ack(Message(data=ack))
         m.on_gyro(Message(data='OK'))
         m.on_drive(odom(t, 0., speed))
@@ -70,7 +73,8 @@ class MonitorTest(unittest.TestCase):
             for i in range(101):
                 now[0] = i*0.1
                 self.feed(m, now[0], 0.4, 0.)
-            self.assertEqual(m.last_status, 'DISAGREEMENT')
+            # Raw disagreement alone is not a stall classification.
+            self.assertEqual(m.last_status, 'CONSISTENT')
             self.assertFalse(m.gate)
             m.drive_pub.publish.assert_not_called()
             self.assertGreater(m.rf_pub.publish.call_count, 0)
@@ -82,6 +86,27 @@ class MonitorTest(unittest.TestCase):
             self.feed(m, now[0], 0., 0., ack=True)
             self.assertTrue(m.ack)
             self.assertFalse(hasattr(m, 'recovery'))
+
+    def test_evidence_states_staleness_and_invalid_messages(self):
+        module = load_monitor()
+        now = [0.]
+        with patch('time.monotonic', side_effect=lambda: now[0]):
+            m = module.MotionConsistencyMonitor()
+            for i in range(31):
+                now[0] = i*0.1
+                self.feed(m, now[0], 0., 0.)
+            for state in ('LIDAR_UNDERCONSTRAINED', 'MOTION_CONTRADICTED', 'TRACKING_UNRELIABLE'):
+                m.on_confidence(Message(data=json.dumps({'schema': 1, 'stamp': now[0],
+                                    'state': state, 'candidate_state': state})))
+                m.evaluate()
+                self.assertEqual(m.last_status, state)
+                self.assertFalse(m.gate)
+            for value in ('null', 'not json', '{"stamp": 0}', '[]'):
+                m.on_confidence(Message(data=value))
+            self.assertFalse(hasattr(m, 'request_pub'))
+            now[0] = 4.
+            m.evaluate()
+            self.assertEqual(m.last_status, 'UNAVAILABLE')
 
     def test_optional_wheel_fusion_waits_for_sustained_agreement(self):
         module = load_monitor()

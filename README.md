@@ -84,8 +84,13 @@ explicit covariance. Wheel translation is disabled by default; wheel rotation
 is never fused. Raw topics remain available for diagnostics.
 
 The monitor compares integrated body velocities against RF2O displacement over
-matching 0.75 s and 2.5 s windows. It reports `CONSISTENT`, `DISAGREEMENT`, or
-`UNAVAILABLE` on `/motion_consistency/status`. Disagreement, missing sensors,
+matching 0.75 s and 2.5 s windows. The new confidence node separately tests scan
+geometry and alternative motion hypotheses. Monitor status distinguishes
+`CONSISTENT`, `LIDAR_UNDERCONSTRAINED`, `MOTION_CONTRADICTED`,
+`TRACKING_UNRELIABLE`, and `UNAVAILABLE`; raw estimate disagreement remains a
+separate field. See [lidar confidence](docs/lidar-confidence.md) for the required
+RF2O diagnostics patch, recording/replay commands and validation limits.
+Disagreement, missing sensors,
 and loss of the monitor do not inhibit propulsion. A corridor, slipping wheels,
 a stall, carrying, and moving scenery can produce indistinguishable disagreement.
 This monitor does not attempt collision recovery or automatically reset a stop.
@@ -106,7 +111,11 @@ commands while Pi feedback is stale or the Pi latch is set, retries explicit
 stop/reset requests, and zeros commands after one second without `/cmd_vel`.
 The Pi's independent 500 ms UDP command timeout remains unchanged.
 
-Deploy with the x86 refresh script; no Pi code update is required for this change.
+For confidence diagnostics, apply the recorded RF2O patch and rebuild RF2O first,
+then run the x86 refresh script as described in the linked guide. No Pi update
+is required. Until the patch is installed, confidence reports `UNAVAILABLE`;
+RF2O odometry and driving continue. Adaptive EKF covariance and wheel fallback
+remain deferred pending real-scene validation.
 An old latched stop is intentionally not cleared automatically. With motion
 commands released, clear it once if necessary:
 

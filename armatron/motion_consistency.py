@@ -1,5 +1,6 @@
 """Diagnose disagreement and gate optional wheel fusion, never propulsion."""
 import copy
+import json
 import math
 import time
 
@@ -42,10 +43,13 @@ class MotionConsistencyMonitor(Node):
         self.ack = None
         self.gate = False
         self.last_status = None
+        self.confidence = None
+        self.confidence_at = float('-inf')
         self.create_subscription(Odometry, '/odom/drive_raw', self.on_drive, 10)
         self.create_subscription(Odometry, '/odom/rf2o', self.on_rf, 10)
         self.create_subscription(Bool, '/drive/safety_inhibited', self.on_ack, 10)
         self.create_subscription(String, '/gyro/status', self.on_gyro, 10)
+        self.create_subscription(String, '/lidar/confidence', self.on_confidence, 10)
         self.status_pub = self.create_publisher(String, '/motion_consistency/status', 10)
         self.valid_pub = self.create_publisher(Bool, '/drive/odometry_valid', 10)
         self.drive_pub = self.create_publisher(Odometry, '/odom/drive_validated', 10)
@@ -57,6 +61,20 @@ class MotionConsistencyMonitor(Node):
 
     def on_gyro(self, msg):
         self.gyro_ok, self.gyro_at = msg.data == 'OK', time.monotonic()
+
+    def on_confidence(self, msg):
+        try:
+            data = json.loads(msg.data)
+            allowed = {'CONSISTENT', 'LIDAR_UNDERCONSTRAINED', 'MOTION_CONTRADICTED',
+                       'TRACKING_UNRELIABLE', 'UNAVAILABLE'}
+            age = self.get_clock().now().nanoseconds/1e9 - float(data['stamp'])
+            if (data.get('schema') != 1 or data['state'] not in allowed or
+                    data.get('candidate_state') not in allowed or not -0.1 <= age <= 0.8):
+                return
+            self.confidence = data
+            self.confidence_at = time.monotonic()
+        except (ValueError, TypeError, KeyError):
+            return
 
     def on_drive(self, msg):
         if not self.current_measurement(msg):
@@ -104,16 +122,22 @@ class MotionConsistencyMonitor(Node):
         bad = healthy and any(result and result['bad'] for result in (short,long))
         # Optional wheel fusion drops immediately, but returns only after a
         # sustained agreement interval. Neither condition commands the motors.
-        consistent = healthy and not bad and self.ack is False
+        evidence_fresh = self.confidence is not None and now-self.confidence_at < 0.8
+        state = self.confidence['state'] if evidence_fresh and healthy else 'UNAVAILABLE'
+        consistent = (healthy and not bad and self.ack is False and state == 'CONSISTENT'
+                      and self.confidence['candidate_state'] == 'CONSISTENT')
         if not consistent:
             self.agreement_since = None
         elif self.agreement_since is None:
             self.agreement_since = now
         self.gate = (self.use_drive and consistent and self.agreement_since is not None
                      and now-self.agreement_since >= self.agreement_seconds)
-        state = 'UNAVAILABLE' if not healthy else 'DISAGREEMENT' if bad else 'CONSISTENT'
         detail = ('sensors unavailable/warming up' if not healthy else
-                  'motion disagreement' if bad else 'motion consistent')
+                  'lidar confidence unavailable' if not evidence_fresh else
+                  self.confidence.get('reason', state))
+        detail += '; raw estimates disagree=' + str(bool(bad))
+        if evidence_fresh:
+            detail += '; candidate=' + self.confidence['candidate_state']
         status = f'{state}: {detail}; wheel gate={self.gate}; Pi inhibit={self.ack if now-self.ack_at<0.5 else "UNKNOWN"}'
         self.status_pub.publish(String(data=status))
         self.valid_pub.publish(Bool(data=self.gate and self.use_drive))

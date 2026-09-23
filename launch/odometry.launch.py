@@ -23,6 +23,12 @@ def generate_launch_description():
         ),
         Node(
             package="armatron",
+            executable="lidar_confidence",
+            name="lidar_confidence",
+            parameters=[PathJoinSubstitution([share, "config", "odometry", "confidence.yaml"])],
+        ),
+        Node(
+            package="armatron",
             executable="motion_consistency",
             name="motion_consistency_monitor",
             parameters=[PathJoinSubstitution([share, "config", "odometry", "monitor.yaml"])],

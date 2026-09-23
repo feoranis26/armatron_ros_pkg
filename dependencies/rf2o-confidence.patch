@@ -1,0 +1,168 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 21a285f..003044e 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -13,6 +13,7 @@ endif()
+ find_package(ament_cmake REQUIRED)
+ find_package(rclcpp REQUIRED)
+ find_package(std_msgs REQUIRED)
++find_package(diagnostic_msgs REQUIRED)
+ find_package(geometry_msgs REQUIRED)
+ find_package(tf2_geometry_msgs REQUIRED)
+ find_package(tf2  REQUIRED)
+@@ -44,6 +45,7 @@ include_directories(
+ 
+ set(DEPENDENCIES
+   "rclcpp"           
++  "diagnostic_msgs"
+   "std_msgs"         
+   "geometry_msgs" 
+   "tf2_geometry_msgs"
+diff --git a/include/rf2o_laser_odometry/CLaserOdometry2D.h b/include/rf2o_laser_odometry/CLaserOdometry2D.h
+index 8fb361b..04d8bb5 100644
+--- a/include/rf2o_laser_odometry/CLaserOdometry2D.h
++++ b/include/rf2o_laser_odometry/CLaserOdometry2D.h
+@@ -123,6 +123,13 @@ public:
+ 
+   MatrixS31 Var;	//3 unknowns: vx, vy, w
+   IncrementCov cov_odo;
++  // Diagnostic-only: finest-level weighted information in scaled coordinates
++  // [vx, vy, 2 metres * wz], expressed in the laser frame.
++  bool quality_valid = false;
++  unsigned int quality_points = 0;
++  float quality_residual = 0.f;
++  Eigen::Vector3f quality_eigenvalues = Eigen::Vector3f::Zero();
++  Eigen::Matrix3f quality_eigenvectors = Eigen::Matrix3f::Zero();
+ 
+   //std::string LaserVarName;				//Name of the topic containing the scan lasers \laser_scan
+   float fps;								//In Hz
+diff --git a/include/rf2o_laser_odometry/CLaserOdometry2DNode.h b/include/rf2o_laser_odometry/CLaserOdometry2DNode.h
+index 85bd6bf..ff0f537 100644
+--- a/include/rf2o_laser_odometry/CLaserOdometry2DNode.h
++++ b/include/rf2o_laser_odometry/CLaserOdometry2DNode.h
+@@ -1,5 +1,6 @@
+ #include "rf2o_laser_odometry/CLaserOdometry2D.h"
+ 
++#include <diagnostic_msgs/msg/diagnostic_array.hpp>
+ #include <tf2/convert.h>
+ #include <tf2/exceptions.h>
+ #include <tf2_ros/transform_broadcaster.h>
+@@ -17,6 +18,7 @@ public:
+   CLaserOdometry2DNode();
+   void process();
+   void publish();
++  void publishQuality(bool solved);
+   bool setLaserPoseFromTf();
+ 
+   CLaserOdometry2D rf2o_ref;
+@@ -42,6 +44,8 @@ public:
+   rclcpp::Subscription<nav_msgs::msg::Odometry>::SharedPtr  initPose_sub;
+   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr  odom_pub;
+ 
++  rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr quality_pub;
++
+   bool scan_available();
+ 
+   //CallBacks
+@@ -78,6 +82,7 @@ CLaserOdometry2DNode::CLaserOdometry2DNode(): Node("CLaserOdometry2DNode")
+   odom_pub  = this->create_publisher<nav_msgs::msg::Odometry>(odom_topic, 5);
+   laser_sub = this->create_subscription<sensor_msgs::msg::LaserScan>(laser_scan_topic,rclcpp::QoS(rclcpp::KeepLast(1)).best_effort().durability_volatile(),
+       std::bind(&CLaserOdometry2DNode::LaserCallBack, this, std::placeholders::_1));
++  quality_pub = create_publisher<diagnostic_msgs::msg::DiagnosticArray>("/rf2o/solver_diagnostics", 10);
+   //init pose??
+   if (init_pose_from_topic != "")
+   {
+diff --git a/src/CLaserOdometry2D.cpp b/src/CLaserOdometry2D.cpp
+index f6f70a5..127484c 100644
+--- a/src/CLaserOdometry2D.cpp
++++ b/src/CLaserOdometry2D.cpp
+@@ -185,6 +185,8 @@ bool CLaserOdometry2D::odometryCalculation(const sensor_msgs::msg::LaserScan& sc
+   //						DIFERENTIAL  ODOMETRY  MULTILEVEL
+   //==================================================================================
+ 
++  quality_valid = false;
++  quality_points = 0;
+   //copy laser scan to internal variable
+   range_wf = Eigen::Map<const Eigen::MatrixXf>(scan.ranges.data(), width, 1);
+ 
+@@ -716,7 +718,25 @@ void CLaserOdometry2D::solveSystemNonLinear()
+   cov_odo = (1.f/float(num_valid_range-3))*AtA.inverse()*res.squaredNorm();
+   kai_loc_level_ = Var;
+ 
+-  //RCLCPP_INFO_STREAM(get_logger(), "[rf2o] COV_ODO:\n" << cov_odo);
++  if (level + 1 == ctf_levels)
++  {
++    quality_points = num_valid_range;
++    Eigen::Matrix3f scale = Eigen::Matrix3f::Identity();
++    scale(2,2) = 0.5f;  // 2 m/rad lever scale; do not compare mixed units.
++    Eigen::Matrix3f information = scale * AtA * scale / float(num_valid_range);
++    if (information.allFinite() && res.allFinite() && Var.allFinite())
++    {
++      Eigen::SelfAdjointEigenSolver<Eigen::Matrix3f> eigen(information);
++      if (eigen.info() == Eigen::Success && eigen.eigenvalues().minCoeff() >= -1e-6f)
++      {
++        quality_eigenvalues = eigen.eigenvalues().cwiseMax(0.f);
++        quality_eigenvectors = eigen.eigenvectors();
++        quality_residual = std::sqrt(res.squaredNorm()/float(num_valid_range));
++        quality_valid = std::isfinite(quality_residual);
++      }
++    }
++  }
++
+ }
+ 
+ void CLaserOdometry2D::Reset(const Pose3d& ini_pose/*, CObservation2DRangeScan scan*/)
+diff --git a/src/CLaserOdometry2DNode.cpp b/src/CLaserOdometry2DNode.cpp
+index e50b356..a50e88b 100644
+--- a/src/CLaserOdometry2DNode.cpp
++++ b/src/CLaserOdometry2DNode.cpp
+@@ -70,7 +70,8 @@ void CLaserOdometry2DNode::process()
+   if( rf2o_ref.is_initialized() && scan_available() )
+   {
+     //Process odometry estimation
+-    rf2o_ref.odometryCalculation(last_scan);
++    const bool solved = rf2o_ref.odometryCalculation(last_scan);
++    publishQuality(solved);
+     publish();
+     new_scan_available = false; //avoids the possibility to run twice on the same laser scan
+   }
+@@ -119,6 +120,39 @@ void CLaserOdometry2DNode::initPoseCallBack(const nav_msgs::msg::Odometry::Share
+   }
+ }
+ 
++void CLaserOdometry2DNode::publishQuality(bool solved)
++{
++  diagnostic_msgs::msg::DiagnosticArray message;
++  message.header = last_scan.header;
++  diagnostic_msgs::msg::DiagnosticStatus status;
++  status.name = "rf2o_solver";
++  const bool valid = solved && rf2o_ref.quality_valid;
++  status.level = valid ? 0 : 2;
++  status.message = valid ? "finest-level solver metrics" : "solver metrics unavailable or invalid";
++  const auto add = [&status](const std::string &key, const std::string &value) {
++    diagnostic_msgs::msg::KeyValue pair;
++    pair.key = key;
++    pair.value = value;
++    status.values.push_back(pair);
++  };
++  add("valid", valid ? "1" : "0");
++  add("valid_points", std::to_string(rf2o_ref.quality_points));
++  add("rotation_scale", "2.0");
++  if (valid)
++  {
++    add("weighted_residual_rms", std::to_string(rf2o_ref.quality_residual));
++    for (int i=0; i<3; ++i)
++    {
++      add("information_eigenvalue_" + std::to_string(i), std::to_string(rf2o_ref.quality_eigenvalues(i)));
++      for (int j=0; j<3; ++j)
++        add("information_eigenvector_" + std::to_string(i) + "_" + std::to_string(j),
++            std::to_string(rf2o_ref.quality_eigenvectors(j,i)));
++    }
++  }
++  message.status.push_back(status);
++  quality_pub->publish(message);
++}
++
+ void CLaserOdometry2DNode::publish()
+ {
+   //first, we'll publish the odometry over tf
