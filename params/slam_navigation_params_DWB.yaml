@@ -188,8 +188,8 @@ controller_server:
     # Goal checker parameters
     precise_goal_checker:
      plugin: "nav2_controller::SimpleGoalChecker"
-     xy_goal_tolerance: 0.15
-     yaw_goal_tolerance: 0.05
+     xy_goal_tolerance: 0.25
+     yaw_goal_tolerance: 0.15
      stateful: True
     # general_goal_checker:
     #   stateful: True
@@ -200,40 +200,41 @@ controller_server:
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
-      min_vel_x: -0.3
-      min_vel_y: -0.075
-      max_vel_x: 0.3
-      max_vel_y: 0.075
+      min_vel_x: -1.5
+      min_vel_y: -0.05
+      max_vel_x: 1.5
+      max_vel_y: 0.05
       max_vel_theta: 1.0
       min_speed_xy: 0.0
-      max_speed_xy: 0.5
+      max_speed_xy: 1.5
       min_speed_theta: 0.0
-      acc_lim_x: 2.5
-      acc_lim_y: 2.5
+      acc_lim_x: 1.5
+      acc_lim_y: 1.5
       acc_lim_theta: 3.2
-      decel_lim_x: -2.5
-      decel_lim_y: -2.5
+      decel_lim_x: -1.5
+      decel_lim_y: -1.5
       decel_lim_theta: -3.2
       vx_samples: 20
       vy_samples: 20
-      vtheta_samples: 5
+      vtheta_samples: 20
       sim_time: 1.7
-      linear_granularity: 0.05
-      angular_granularity: 0.025
+      linear_granularity: 0.5
+      angular_granularity: 0.25
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.1
+      xy_goal_tolerance: 0.25
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: True
       stateful: True
       critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
       BaseObstacle.scale: 0.02
-      PathAlign.scale: 64.0
+      PathAlign.scale: 32.0
       GoalAlign.scale: 24.0
-      PathAlign.forward_point_distance: 0.1
-      GoalAlign.forward_point_distance: 0.1
+      PathAlign.forward_point_distance: 0.5
+      GoalAlign.forward_point_distance: 0.5
       PathDist.scale: 32.0
       GoalDist.scale: 24.0
       RotateToGoal.scale: 32.0
+      Oscillation.scale: 1.0
       RotateToGoal.slowing_factor: 5.0
       RotateToGoal.lookahead_time: -1.0
 
@@ -391,10 +392,10 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.5, 0.5, 1.0]
-    min_velocity: [-0.5, -0.5, -1.0]
-    max_accel: [2.5, 2.5, 3.2]
-    max_decel: [-2.5, -2.5, -3.2]
+    max_velocity: [2.0, 0.5, 3.0]
+    min_velocity: [-2.0, -0.5, -3.0]
+    max_accel: [1.5, 1.5, 3.2]
+    max_decel: [-1.5, -1.5, -3.2]
     odom_topic: "odom"
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]

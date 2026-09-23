@@ -2,10 +2,7 @@ import math
 import socket, threading, time
 from simple_pid import PID
 
-from smbus import SMBus
 import numpy as np
-from imusensor.MPU9250 import MPU9250
-from imusensor.filters import kalman 
 from ament_index_python.packages import get_package_share_directory
 
 import rclpy
@@ -17,9 +14,6 @@ from std_srvs.srv import Empty
 from geometry_msgs.msg import Twist, Point, Pose, PoseStamped, Quaternion, TransformStamped
 from nav_msgs.msg import Odometry
 from tf2_ros import TransformBroadcaster
-
-import board
-import adafruit_bno055
 
 from .whl_udp import WheelDriver
 from .gyro_udp import UDPGyro
@@ -75,7 +69,7 @@ class ArmatronDrive(Node):
 
         self.absolute = False
 
-        self.driver = WheelDriver("127.0.0.1", 11753, 11754)
+        self.driver = WheelDriver("10.8.3.56", 11753, 11754)
         #self.driver = WheelDriver()
         self.driver.start()
 
@@ -84,7 +78,7 @@ class ArmatronDrive(Node):
         #self.imu.mode = adafruit_bno055.IMUPLUS_MODE
             #exit()
 
-        self.gyro = UDPGyro("127.0.0.1", 11755, 11757)
+        self.gyro = UDPGyro("10.8.3.56", 11755, 11757)
         self.gyro.start()
         
         #package_share_directory = get_package_share_directory('mpu9250_ros')
@@ -206,6 +200,7 @@ class ArmatronDrive(Node):
 
     def on_vel_msg_received(self, msg):
         self.get_logger().debug(f"Received spd msg l x: {msg.linear.x} y: {msg.linear.y} z: {msg.linear.z} a x: {msg.angular.x} y: {msg.angular.y} z: {msg.angular.z}")
+        print(f"Received speed message: linear x: {msg.linear.x} y: {msg.linear.y} z: {msg.linear.z} angular x: {msg.angular.x} y: {msg.angular.y} z: {msg.angular.z}")
         self.set_speed(msg)
         self.lastSpeedReceived = time.time()
 
