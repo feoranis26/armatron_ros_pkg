@@ -8,6 +8,8 @@ from std_msgs.msg import Float64, String
 from std_srvs.srv import Empty
 from geometry_msgs.msg import Twist, Point, Quaternion
 from nav_msgs.msg import Odometry
+from sensor_msgs.msg import Imu
+from .gyro_imu import GyroImuAdapter
 
 from .drive_protocol import WheelDriver
 from .gyro_protocol import UDPGyro
@@ -58,6 +60,11 @@ class ArmatronDrive(Node):
         # authoritative odom -> base_link transform.
         self.odom_publisher = self.create_publisher(Odometry, "/odom/drive_raw", 10)
         self.gyro_status_publisher = self.create_publisher(String, '/gyro/status', 10)
+        self.gyro_imu_publisher = self.create_publisher(Imu, '/imu/gyro', 10)
+        # Initial uncertainty assumption (~2.9 degree standard deviation), not
+        # a claim of measured BNO accuracy. Keep configurable for validation.
+        self.gyro_imu = GyroImuAdapter(
+            self.declare_parameter('gyro_yaw_variance', 0.0025).value, Imu)
         self.gyro_was_fresh = None
         self.last_gyro_warning = float('-inf')
         self.safety_stop_service = self.create_service(
@@ -109,6 +116,12 @@ class ArmatronDrive(Node):
         read_yaw = self.gyro.angle
         if read_yaw is not None:
             self.heading = -math.radians(read_yaw)
+
+        imu = self.gyro_imu.message(
+            self.gyro.sample, time.monotonic(),
+            self.get_clock().now().to_msg(), self.base_frame_id)
+        if imu is not None:
+            self.gyro_imu_publisher.publish(imu)
 
         #quat = self.imu.quaternion
         quaternion = Quaternion()

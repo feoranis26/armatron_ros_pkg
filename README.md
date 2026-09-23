@@ -48,6 +48,18 @@ ros2 launch armatron visualization.launch.py
 
 ## Fused odometry and map profiles
 
+The EKF uses drive x/y velocity, RF2O differential planar pose, and BNO heading
+on `/imu/gyro`. Wheel-derived yaw rate is excluded. The x86 bridge adapts the
+existing UDP Euler heading into a yaw-only IMU message; angular velocity and
+acceleration are marked unavailable. Heading is fused relative to the first
+sample after EKF startup, not differentiated. Only fresh, new packets produce
+IMU messages, timestamped at bridge publication (the UDP protocol has no sensor
+timestamp). `gyro_yaw_variance` on the drive bridge defaults to 0.0025 rad² as
+an initial uncertainty assumption, not a calibrated accuracy specification.
+The heading conversion matches the existing planar body convention validated
+in the turn recording; full 3D carrying and magnetic disturbances are not
+validated. Add `/imu/gyro` to diagnostic bag recordings.
+
 Gyro transport health is published by the x86 bridge on `/gyro/status`. Missing
 or invalid angle packets for one second produce STALE status and a journal
 error every five seconds; raw pose heading is held at its last value (zero

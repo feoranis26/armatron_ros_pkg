@@ -11,11 +11,11 @@ ekf_filter_node:
 
     odom0: /odom/drive_raw
     # Open-loop step positions are deliberately excluded.  The controller's
-    # instantaneous x/y/yaw-rate estimate keeps healthy motion responsive.
+    # body-frame x/y velocity is used; wheel-derived rotation is excluded.
     odom0_config: [false, false, false,
                    false, false, false,
                    true, true, false,
-                   false, false, true,
+                   false, false, false,
                    false, false, false]
     odom0_queue_size: 10
     odom0_differential: false
@@ -30,3 +30,15 @@ ekf_filter_node:
                    false, false, false]
     odom1_queue_size: 10
     odom1_differential: true
+
+    # Independent BNO heading, relative to the first sample after EKF startup.
+    # Do not invent angular velocity from wheel motion or missing IMU fields.
+    imu0: /imu/gyro
+    imu0_config: [false, false, false,
+                  false, false, true,
+                  false, false, false,
+                  false, false, false,
+                  false, false, false]
+    imu0_relative: true
+    imu0_differential: false
+    imu0_queue_size: 10
