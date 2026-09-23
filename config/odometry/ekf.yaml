@@ -10,8 +10,8 @@ ekf_filter_node:
     world_frame: odom
 
     odom0: /odom/drive_validated
-    # Optional input, silent by default (monitor use_drive_fusion: false).
-    # If enabled, only body-frame x/y velocity is used, never wheel rotation.
+    # Directional step-velocity fallback, only in confirmed lidar-weak geometry.
+    # Strong directions have high covariance; wheel yaw is never fused.
     odom0_config: [false, false, false,
                    false, false, false,
                    true, true, false,
@@ -21,15 +21,16 @@ ekf_filter_node:
     odom0_differential: false
 
     odom1: /odom/rf2o_fusion
-    # RF2O supplies independent planar pose change. Its twist is not useful
-    # for a holonomic base, so it is intentionally not fused.
-    odom1_config: [true, true, false,
-                   false, false, true,
+    # Adapter derives body-frame vx/vy from RF2O pose increments and publishes
+    # explicit directional velocity covariance. No differential covariance
+    # conversion and no wheel/RF2O yaw input: gyro is the heading authority.
+    odom1_config: [false, false, false,
                    false, false, false,
+                   true, true, false,
                    false, false, false,
                    false, false, false]
     odom1_queue_size: 10
-    odom1_differential: true
+    odom1_differential: false
 
     # Independent BNO heading, relative to the first sample after EKF startup.
     # Do not invent angular velocity from wheel motion or missing IMU fields.

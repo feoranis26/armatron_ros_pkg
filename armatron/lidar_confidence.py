@@ -1,4 +1,4 @@
-"""Timestamp-aligned scan hypotheses and diagnostic-only confidence output."""
+"""Timestamp-aligned scan hypotheses and directional confidence output."""
 from collections import deque
 import json
 import math
@@ -16,6 +16,7 @@ from std_msgs.msg import String
 from tf2_ros import Buffer, TransformListener, TransformException
 
 from .motion_hypotheses import History, hypotheses
+from .evidence_windows import combine
 from .scan_evidence import ScanEvidence, EvidenceDwell, rotation
 
 
@@ -36,6 +37,9 @@ class LidarConfidence(Node):
         self.interval = float(param('comparison_seconds', 0.6))
         if not 0.3 <= self.interval <= 1.5:
             raise ValueError('comparison_seconds must be in [0.3, 1.5]')
+        self.long_interval = float(param('accumulation_seconds', 1.8))
+        if not self.interval < self.long_interval <= 2.5:
+            raise ValueError('accumulation_seconds must exceed comparison_seconds and be <= 2.5')
         self.engine = ScanEvidence(**{k: param(k, v) for k, v in {
             'max_points': 240, 'min_points': 30, 'max_gap': 0.5,
             'match_distance': 0.4, 'residual_cap': 0.25, 'min_overlap': 0.55,
@@ -133,13 +137,26 @@ class LidarConfidence(Node):
                 continue
             metrics = min(native, key=lambda row: row[0])[1]
             start = time.monotonic()
-            result = self.engine.analyze(reference, points, poses)
+            short = self.engine.analyze(reference, points, poses)
+            long = None
+            long_refs = [r for r in self.scans if self.long_interval <= t-r[0] <= self.long_interval+0.2]
+            if long_refs:
+                long_stamp, long_scan = long_refs[-1]
+                long_poses = hypotheses(self.drive, self.gyro, self.rf, long_stamp, t)
+                if long_poses is not None:
+                    long = self.engine.analyze(long_scan, points, long_poses)
+                    long.update(reference_stamp=long_stamp,
+                                hypotheses={k: v.tolist() for k, v in long_poses.items()})
+            result = combine(short, long)
+            result.update(fusion_information=short.get('information'),
+                          fusion_reference_yaw=float(self.rf.at(a)[2]),
+                          fusion_state=short['state'])
             if metrics.get('valid') != '1':
                 result.update(state='TRACKING_UNRELIABLE', reason='RF2O solver invalid')
             # Expose native metrics for comparison/calibration. The independent
             # geometric test owns classification; internal weights are not a
             # calibrated probability or physical pose covariance.
-            result.update(schema=1, stamp=t, reference_stamp=a, frame_id=self.base_frame,
+            result.update(schema=2, stamp=t, reference_stamp=a, frame_id=self.base_frame,
                           hypotheses={k: v.tolist() for k, v in poses.items()}, solver=metrics)
             result['candidate_state'] = result['state']
             result['state'] = self.dwell.update(t, result['candidate_state'])
@@ -149,7 +166,7 @@ class LidarConfidence(Node):
             return
         if mono_now-self.last_output >= 0.5:
             self.dwell = EvidenceDwell()
-            self.emit({'schema': 1, 'stamp': ros_now, 'state': 'UNAVAILABLE',
+            self.emit({'schema': 2, 'stamp': ros_now, 'state': 'UNAVAILABLE',
                        'candidate_state': 'UNAVAILABLE', 'reason': self.last_reason})
             self.last_output = mono_now
 

@@ -145,7 +145,10 @@ class ScanEvidence:
             return dict(out, state='TRACKING_UNRELIABLE', reason='scan evidence rejects RF2O translation')
         if rejected('drive'):
             return dict(out, state='MOTION_CONTRADICTED', reason='paired scan evidence rejects drive translation',
-                        near_zero_supported=not rejected('zero'))
+                        near_zero_supported=not rejected('zero'),
+                        motion_kind=('EXTERNAL_MOTION' if np.linalg.norm(poses['drive'][:2]) < self.score_margin
+                                     and np.linalg.norm(poses['rf2o'][:2]) > 2*self.score_margin
+                                     else 'DRIVE_MOTION_REJECTED'))
         return dict(out, state='CONSISTENT', reason='drive translation compatible with scan evidence')
 
 

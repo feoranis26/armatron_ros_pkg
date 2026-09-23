@@ -1,9 +1,8 @@
 # Lidar confidence and motion evidence
 
-This stage adds diagnostics without changing RF2O's solution, EKF uncertainty,
-propulsion permissions, or the default RF2O+gyro fusion policy. Adaptive
-covariance and wheel fallback remain deferred until hallway recordings validate
-the diagnostics. A raw drive/RF2O difference is not a confirmed stall.
+Confidence now adjusts EKF translation weights and enables directional step
+fallback by default. RF2O's solver and all propulsion permissions are unchanged.
+A motion contradiction is a measurement-trust decision, not a motor stop.
 
 ## Deploy on x86
 
@@ -30,7 +29,9 @@ the existing odometry path and propulsion continue normally.
 
 ## Evidence and frames
 
-`lidar_confidence` compares scans about 0.6 s apart. Static TF maps laser points
+`lidar_confidence` compares scans about 0.6 s and 1.8 s apart.
+The longer window accumulates displacement evidence; it does not repeatedly
+count overlapping scans as independent statistical samples. Static TF maps laser points
 to base_link, including the reversed lidar mounting and position offset. It
 requires bracketing drive velocity, gyro heading and RF2O poses, rejects gaps
 over 0.3 s, never extrapolates, and only evaluates processed RF2O scan stamps
@@ -67,11 +68,12 @@ stall. Repeated geometry, occlusions and dynamic scenes can still mislead it.
 
 Native `/rf2o/solver_diagnostics` describes the laser-frame solver matrix.
 Independent `/lidar/confidence` information and directions describe the
-reference base frame. Neither is covariance; do not feed these matrices to an EKF.
+reference base frame. Neither is covariance. The adapter maps weak/strong directions to bounded
+velocity variances; it does not feed the information matrix itself to the EKF.
 
 ## States
 
-`/lidar/confidence` is JSON in std_msgs/String (schema 1), carrying scan and
+`/lidar/confidence` is JSON in std_msgs/String (schema 2), carrying scan and
 reference timestamps, frame, candidate and confirmed state, reason, hypothesis
 poses, fit scores, overlap, inliers, information eigenvalues/directions, tested
 translation direction and strength, common overlap, native solver metrics, and evaluation runtime.
@@ -88,9 +90,11 @@ translation direction and strength, common overlap, native solver metrics, and e
 States require three distinct evaluations and 0.5 s of consecutive evidence.
 The candidate state is immediate. Missing evidence clears confirmation. The
 monitor mirrors confirmed states and still shows raw estimate disagreement as
-a separate field. Optional wheel fusion requires both candidate and confirmed
-`CONSISTENT`, no raw disagreement, and its existing agreement dwell. Default
-wheel fusion remains off. The confidence node subscribes to /scan and therefore
+a separate field. The short window supplies current geometry; a long-window
+contradiction can override short-window consistency but cannot override current
+underconstraint or unreliable tracking. `EXTERNAL_MOTION` distinguishes measured
+translation with near-zero step prediction from rejected nonzero drive motion.
+The confidence node subscribes to /scan and therefore
 counts as a consumer for lidar-demand standby.
 
 Initial thresholds live in config/odometry/confidence.yaml. In particular,
@@ -104,7 +108,7 @@ strafing, carrying, and a controlled low-speed stall separately. Note approximat
 times and actual motion so classifications can be checked against observations.
 
 ```bash
-ros2 bag record -o hallway_confidence /scan /tf_static /tf /odom/drive_raw /odom/rf2o /imu/gyro /rf2o/solver_diagnostics /lidar/confidence /motion_consistency/status /cmd_vel /odometry/filtered /gyro/status /drive/safety_inhibited
+ros2 bag record -o hallway_confidence /scan /tf_static /tf /odom/drive_raw /odom/rf2o /imu/gyro /rf2o/solver_diagnostics /lidar/confidence /motion_consistency/status /cmd_vel /odometry/filtered /gyro/status /drive/safety_inhibited /odometry/fusion_status /odom/rf2o_fusion /odom/drive_validated
 ```
 
 The replay tool republishes only recorded sensor/TF inputs in an isolated ROS
@@ -123,7 +127,7 @@ Do not run motor nodes in the replay domain. Default replay rate is real time.
 Synthetic tests exercise a corridor, a room, a stationary contradiction,
 RF2O underestimation, rotation, missing geometry/overlap, timestamp gaps, and
 state persistence. ROS/Linux runtime and real scene validation are still needed
-before enabling adaptive covariance. Observe evaluation_ms to assess x86 load.
+to tune the enabled covariance policy. Observe evaluation_ms to assess x86 load.
 
 ## Classifier regression results (September 23)
 
@@ -145,6 +149,55 @@ reliably detected at the current 0.6-second comparison interval. CONSISTENT
 means insufficient evidence to reject the drive prediction, not proof of motion.
 The strafing tail produces no sustained contradiction.
 
-These recordings informed the revision and are regression checks, not an
-independent validation set. Fusion and propulsion behavior remain unchanged.
-A fresh hallway/stall check is still needed before using confidence for fusion.
+Those results describe the earlier short-window classifier. The accumulated
+window update and fusion policy are described below. These recordings informed
+development and are regression checks, not an independent validation set.
+
+## Accumulated evidence and active fusion
+
+The 1.8 s window detects the slow-stall segment of stall1 at approximately
+22.7–24.5 s, and the faster stall at 38.7–43.8 s in offline replay. It also
+reports drive-model disagreement in the strafing tail at 50.1–53.7 s and briefly
+after the hallway return at 73.7–74.8 s. These are not confirmed physical stalls.
+Synthetic room scans verify external movement at 0.2 m/s with zero wheel motion;
+no hand-pulled recording is available to validate that case on the robot.
+
+The fusion adapter derives body-frame vx/vy from consecutive RF2O poses and
+publishes them on /odom/rf2o_fusion. The EKF fuses this twist directly (no pose
+or differential input), retaining BNO heading as the sole yaw measurement.
+This avoids trying to tune pose covariance through robot_localization's
+[differential conversion](https://github.com/cra-ros-pkg/robot_localization/blob/humble-devel/src/ros_filter.cpp).
+Only fresh, ordered pose pairs separated by 0.02–0.5 s are differentiated;
+frame changes and apparent speeds above 2 m/s reset/skip the velocity sample.
+
+The short-window translation information matrix determines eigen-directions.
+Directions weaker than 20% of the strongest, or below absolute strength 0.005,
+receive RF velocity variance 1.0 (m/s)^2; strong directions receive 0.0025.
+The covariance rotates from the reference base frame into the current base
+frame, including xy cross terms. Confirmed underconstraint permits wheel
+variance 0.04 in weak directions and 1e6 elsewhere. These are configurable
+policy values, not calibrated sensor covariance. In the weak scalar direction,
+these defaults give steps about 96% of the two-measurement information weight;
+this is not a promise about the full EKF's resulting trajectory.
+
+A candidate contradiction removes wheel fallback immediately. Missing/stale
+confidence or unreliable tracking inflates RF translation covariance in both
+directions and suppresses wheel fallback. The adapter does not automatically
+substitute step motion merely because lidar has stopped publishing. Fresh gyro,
+RF, drive and Pi feedback are required for fallback. Step input never supplies
+yaw. Propulsion remains independent of all estimator modes.
+
+`adaptive_fusion` and `wheel_fallback` in monitor.yaml default to true.
+`rf_velocity_variance`, `rf_weak_velocity_variance`, `wheel_fallback_variance`
+and `fusion_weak_ratio` control the policy. `/odometry/fusion_status` reports the
+mode and fallback gate. Add it, /odom/rf2o_fusion, and /odom/drive_validated to
+future bags. The old use_drive_fusion/agreement_seconds and pose variance
+parameters are retired. Rebuild/refresh ARMATRON on x86; no RF2O/Pi rebuild is
+needed. Restarting hardware also restarts the EKF with the new input selection.
+
+The compromise remains explicit: if a wheel stalls in an unobservable hallway
+direction, step fallback may invent travel there. Carrying in that direction
+with stationary wheels is also fundamentally ambiguous. Strong scan evidence
+can reject step predictions; absent geometric evidence cannot establish truth.
+A fresh live run is required to assess this fusion policy, including scan-rate
+velocity noise and transitions. Offline weight selection is not a full EKF replay.

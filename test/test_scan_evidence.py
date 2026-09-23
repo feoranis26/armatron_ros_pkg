@@ -86,3 +86,10 @@ class EvidenceTest(unittest.TestCase):
     def test_candidate_cannot_win_by_dropping_overlap(self):
         result = self.analyze(room_scan(), [0., 0., 0.], [2., 0., 0.])
         self.assertEqual(result['state'], 'TRACKING_UNRELIABLE', result)
+
+    def test_carrying_at_point_two_metres_per_second(self):
+        for duration in (0.6, 1.8):
+            distance = .2*duration
+            result = self.analyze(room_scan((distance, 0.)), [distance,0.,0.], [0.,0.,0.])
+            self.assertEqual(result['state'], 'MOTION_CONTRADICTED', result)
+            self.assertEqual(result['motion_kind'], 'EXTERNAL_MOTION')

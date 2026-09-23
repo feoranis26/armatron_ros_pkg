@@ -49,13 +49,34 @@ def load_monitor():
 
 
 def odom(t, x, vx):
-    return NS(header=NS(stamp=NS(sec=int(t), nanosec=int((t-int(t))*1e9))),
+    return NS(child_frame_id="base_link", header=NS(frame_id="odom", stamp=NS(sec=int(t), nanosec=int((t-int(t))*1e9))),
               pose=NS(pose=NS(position=NS(x=x,y=0.), orientation=NS(x=0.,y=0.,z=0.,w=1.)),
                       covariance=[0.]*36),
               twist=NS(twist=NS(linear=NS(x=vx,y=0.), angular=NS(z=0.)), covariance=[0.]*36))
 
 
 class MonitorTest(unittest.TestCase):
+    def test_carried_motion_publishes_lidar_velocity_without_wheel_input(self):
+        module = load_monitor()
+        now = [0.]
+        with patch('time.monotonic', side_effect=lambda: now[0]):
+            m = module.MotionConsistencyMonitor()
+            for i in range(31):
+                t = now[0] = i*0.1
+                m.on_confidence(Message(data=json.dumps(dict(schema=2, stamp=t, frame_id='base_link',
+                    state='MOTION_CONTRADICTED', candidate_state='MOTION_CONTRADICTED',
+                    fusion_state='MOTION_CONTRADICTED', fusion_reference_yaw=0.,
+                    fusion_information=[[.5,0.,0.],[0.,.5,0.],[0.,0.,1.]]))))
+                m.on_ack(Message(data=False))
+                m.on_gyro(Message(data='OK'))
+                m.on_drive(odom(t, 0., 0.))
+                m.on_rf(odom(t, .2*t, 0.))
+            message = m.rf_pub.publish.call_args.args[0]
+            self.assertAlmostEqual(message.twist.twist.linear.x, .2)
+            self.assertAlmostEqual(message.twist.covariance[0], .0025)
+            m.drive_pub.publish.assert_not_called()
+            self.assertEqual(m.fusion_mode, 'LIDAR')
+
     def feed(self, m, t, speed, x, ack=False):
         m.on_confidence(Message(data=json.dumps({'schema': 1, 'stamp': t,
                         'state': 'CONSISTENT', 'candidate_state': 'CONSISTENT'})))
@@ -108,25 +129,30 @@ class MonitorTest(unittest.TestCase):
             m.evaluate()
             self.assertEqual(m.last_status, 'UNAVAILABLE')
 
-    def test_optional_wheel_fusion_waits_for_sustained_agreement(self):
+    def test_directional_fallback_and_immediate_contradiction_veto(self):
         module = load_monitor()
         now = [0.]
         with patch('time.monotonic', side_effect=lambda: now[0]):
             m = module.MotionConsistencyMonitor()
-            m.use_drive = True
-            x = 0.
-            for i in range(161):
+            for i in range(40):
                 t = now[0] = i*0.1
-                # Healthy motion, then disagreement, then healthy motion again.
-                if t < 5 or t >= 8:
-                    x += 0.04
-                self.feed(m, t, 0.4, x)
-                if 4.5 < t < 5:
-                    self.assertTrue(m.gate)
-                if 6 < t < 11:
-                    self.assertFalse(m.gate)
+                m.on_confidence(Message(data=json.dumps(dict(schema=2, stamp=t, frame_id='base_link',
+                    state='LIDAR_UNDERCONSTRAINED', candidate_state='LIDAR_UNDERCONSTRAINED',
+                    fusion_state='LIDAR_UNDERCONSTRAINED', fusion_reference_yaw=0.,
+                    fusion_information=[[.02,0.,0.],[0.,.98,0.],[0.,0.,1.]]))))
+                m.on_ack(Message(data=False))
+                m.on_gyro(Message(data='OK'))
+                m.on_drive(odom(t, 0., .2))
+                m.on_rf(odom(t, 0., 0.))
             self.assertTrue(m.gate)
-            self.assertGreater(m.drive_pub.publish.call_count, 0)
-            now[0] = 17.
+            wheel = m.drive_pub.publish.call_args.args[0].twist.covariance
+            lidar = m.rf_pub.publish.call_args.args[0].twist.covariance
+            self.assertLess(wheel[0], lidar[0])
+            self.assertGreater(wheel[7], lidar[7])
+            m.confidence['candidate_state'] = 'MOTION_CONTRADICTED'
+            m.evaluate()
+            self.assertFalse(m.gate)
+            self.assertFalse(hasattr(m, 'request_pub'))
+            now[0] = 6.
             m.evaluate()
             self.assertFalse(m.gate)

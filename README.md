@@ -48,7 +48,7 @@ ros2 launch armatron visualization.launch.py
 
 ## Fused odometry and map profiles
 
-The EKF defaults to RF2O differential planar pose and BNO heading
+The EKF uses RF2O-derived body-frame translation velocity and BNO heading
 on `/imu/gyro`. Wheel-derived yaw rate is excluded. The x86 bridge adapts the
 existing UDP Euler heading into a yaw-only IMU message; angular velocity and
 acceleration are marked unavailable. Heading is fused relative to the first
@@ -80,8 +80,9 @@ and provide an initial pose as needed before resuming navigation after a reset.
 `robot_localization` as the sole `odom -> base_link` authority. The stepper
 estimate remains available at `/odom/drive_raw` for comparison and for the
 motion-consistency monitor. `/odom/rf2o_fusion` supplies lidar measurements with
-explicit covariance. Wheel translation is disabled by default; wheel rotation
-is never fused. Raw topics remain available for diagnostics.
+explicit directional velocity covariance. Step-derived translation is a high-uncertainty
+fallback in confirmed lidar-weak directions; wheel rotation is never fused.
+Raw topics remain available for diagnostics.
 
 The monitor compares integrated body velocities against RF2O displacement over
 matching 0.75 s and 2.5 s windows. The new confidence node separately tests scan
@@ -96,13 +97,20 @@ a stall, carrying, and moving scenery can produce indistinguishable disagreement
 This monitor does not attempt collision recovery or automatically reset a stop.
 SLAM may correct drift but shares the lidar's geometric limitations.
 
-Settings are in `config/odometry/monitor.yaml`. `use_drive_fusion: false` is the
-default. If explicitly enabled, `/odom/drive_validated` supplies wheel x/y
-velocity only after three seconds of continuous healthy agreement; disagreement
-or stale data immediately closes that fusion gate. `agreement_seconds` controls
-this delay. `/drive/odometry_valid` reports whether wheel fusion is enabled and
-allowed; false is normal in the default configuration and is not a drive stop.
-The stationary comparison allowances remain configurable diagnostic thresholds.
+Settings are in `config/odometry/monitor.yaml`. `adaptive_fusion: true` and
+`wheel_fallback: true` are the defaults. RF2O velocity variance rises along weak
+geometric directions. `/odom/drive_validated` supplies step-derived x/y velocity
+only during confirmed underconstraint with fresh sensors and Pi feedback;
+its covariance suppresses influence along lidar-strong directions. Contradiction
+or unavailable confidence immediately removes fallback. `/drive/odometry_valid`
+reports whether fallback is allowed, not a motor permission.
+
+The confidence node checks both 0.6 s and 1.8 s scan intervals. The longer
+interval accumulates displacement evidence for slower stalls and external motion.
+`/odometry/fusion_status` exposes which fusion mode is active. Set
+`wheel_fallback: false` to accept weak lidar translation without step fallback;
+set `adaptive_fusion: false` for fixed lidar velocity covariance and no fallback.
+Neither setting reinstates any odometry-based motor stop.
 
 Explicit `/drive/safety_stop` and `/drive/safety_reset` services and the
 `/drive/inhibit_request` topic remain available to a separate supervisor.
@@ -114,8 +122,8 @@ The Pi's independent 500 ms UDP command timeout remains unchanged.
 For confidence diagnostics, switch to the RF2O fork branch and rebuild RF2O first,
 then run the x86 refresh script as described in the linked guide. No Pi update
 is required. Until the fork diagnostics are built, confidence reports `UNAVAILABLE`;
-RF2O odometry and driving continue. Adaptive EKF covariance and wheel fallback
-remain deferred pending real-scene validation.
+RF2O odometry and driving continue. Directional velocity covariance and step fallback are now enabled; live tuning
+is still required. A stall in an unobservable direction can still cause drift.
 An old latched stop is intentionally not cleared automatically. With motion
 commands released, clear it once if necessary:
 
@@ -125,7 +133,7 @@ ros2 service call /drive/safety_reset std_srvs/srv/Empty '{}'
 
 The old `/motion_consistency/reset` service is removed. Verify that disagreement
 changes status without setting the Pi latch, `/odom/rf2o_fusion` keeps publishing,
-and `/odom/drive_validated` stays silent by default. Test explicit stop/reset and
+and `/odom/drive_validated` appears only when directional fallback is allowed. Test explicit stop/reset and
 command timeout separately. RF2O sensor loss is reported but does not stop teleop;
 autonomous navigation must handle localization loss through its own supervision.
 

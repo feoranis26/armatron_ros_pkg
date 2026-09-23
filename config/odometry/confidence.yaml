@@ -2,6 +2,7 @@ lidar_confidence:
   ros__parameters:
     base_frame: base_link
     comparison_seconds: 0.6
+    accumulation_seconds: 1.8
     max_points: 240
     min_points: 30
     max_gap: 0.5
@@ -16,4 +17,4 @@ lidar_confidence:
     score_margin: 0.025
     directional_ratio: 0.20  # constraint along tested translation / strongest translation
     # Initial diagnostic thresholds, not calibrated confidence probabilities.
-    # No adaptive covariance or wheel fallback until recordings validate them.
+    # Directional geometry is consumed by the fusion adapter.
