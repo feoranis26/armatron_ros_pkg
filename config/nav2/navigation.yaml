@@ -180,7 +180,7 @@ controller_server:
   ros__parameters:
     controller_frequency: 20.0
     min_x_velocity_threshold: 0.001
-    min_y_velocity_threshold: 0.5
+    min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugin: "progress_checker"
@@ -225,19 +225,20 @@ controller_server:
       vy_samples: 20
       vtheta_samples: 20
       sim_time: 1.7
-      linear_granularity: 0.5
-      angular_granularity: 0.25
+      # Sample translation at half a costmap cell and rotation at ~3 degrees.
+      linear_granularity: 0.025
+      angular_granularity: 0.05
       transform_tolerance: 0.2
       xy_goal_tolerance: 0.25
       trans_stopped_velocity: 0.25
       short_circuit_trajectory_evaluation: True
       stateful: True
-      critics: ["RotateToGoal", "Oscillation", "BaseObstacle", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
-      BaseObstacle.scale: 0.02
+      critics: ["RotateToGoal", "Oscillation", "ObstacleFootprint", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
+      ObstacleFootprint.scale: 0.02
       PathAlign.scale: 32.0
       GoalAlign.scale: 24.0
-      PathAlign.forward_point_distance: 0.5
-      GoalAlign.forward_point_distance: 0.5
+      PathAlign.forward_point_distance: 0.15
+      GoalAlign.forward_point_distance: 0.15
       PathDist.scale: 32.0
       GoalDist.scale: 24.0
       RotateToGoal.scale: 32.0
@@ -256,7 +257,9 @@ local_costmap:
       width: 3
       height: 3
       resolution: 0.05
-      robot_radius: 0.22
+      # 34 cm square, centred on base_link; wheels remain inside this outline.
+      footprint: "[[0.17, 0.17], [-0.17, 0.17], [-0.17, -0.17], [0.17, -0.17]]"
+      footprint_padding: 0.01
       plugins: ["voxel_layer", "denoise_layer", "inflation_layer"]
       denoise_layer:
         plugin: "nav2_costmap_2d::DenoiseLayer"
@@ -300,7 +303,9 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.22
+      # 34 cm square, centred on base_link; wheels remain inside this outline.
+      footprint: "[[0.17, 0.17], [-0.17, 0.17], [-0.17, -0.17], [0.17, -0.17]]"
+      footprint_padding: 0.01
       resolution: 0.05
       track_unknown_space: true
       plugins: ["static_layer", "obstacle_layer", "denoise_layer", "inflation_layer"]
