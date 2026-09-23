@@ -32,6 +32,7 @@ setup(
         'console_scripts': [
             'drive = armatron.drive_bridge:main',
             'scan_filter = armatron.scan_filter:main',
+            'lidar_demand = armatron.lidar_demand:main',
             'gyro_pub = armatron.gyro_pub:main',
             'armatron-map = armatron.map_manager:main',
             'motion_consistency = armatron.motion_consistency:main',

@@ -147,6 +147,32 @@ updates the selected posegraph. RF2O source remains external; see
 
 ## systemd installation
 
+### Lidar idle standby
+
+Hardware bringup includes `lidar_demand`. It checks the ROS graph every 0.5 s
+and calls the RPLidar `/stop_motor` service after 5 s without consumers of
+`/scan` or `/scan_raw`. The internal `/scan_filter` raw subscription is ignored.
+Any consumer returning triggers `/start_motor`; the driver stays running so
+it can receive that request. Discovery and motor spin-up add some wake latency.
+RF2O counts as a consumer, so normal local odometry keeps the lidar running even
+when navigation and RViz are closed. Topic recorders and `ros2 topic hz` also
+count. This is subscriber-based standby, not a robot inactivity timer.
+
+The watcher logs consumer changes, service completion, and throttled failures
+to `journalctl -u armatron-hardware`. Empty service responses acknowledge the
+request, not physical motor health. It retries unavailable/timed-out services
+and reapplies demand when the raw-scan publisher restarts. Keep the driver's
+`auto_standby` disabled; the launch file sets this explicitly.
+
+For standalone use: `ros2 run armatron lidar_demand`. Parameters are
+`idle_seconds`, `raw_topic`, `scan_topic`, `filter_node` (fully qualified),
+`start_service`, and `stop_service`. Run only one watcher per lidar.
+To test standby, stop scan consumers (including RF2O), leave the driver,
+filter, and watcher running, and wait five seconds. Subscribing to `/scan`
+should wake it. Closing that subscriber should stop it again.
+
+### Installing services
+
 All service units explicitly set `ROS_DOMAIN_ID=67`. Set the same value in
 interactive terminals before running RViz, ROS CLI tools, or manual launches:
 `export ROS_DOMAIN_ID=67`.

@@ -21,6 +21,8 @@ def generate_launch_description():
                 # 'serial_baudrate': 256000, # A3
                 'inverted': False,
                 'angle_compensate': True,
+                # The downstream-aware watcher owns standby (not the driver).
+                'auto_standby': False,
             }],
             remappings=[
                 ('/scan', '/scan_raw'),
@@ -41,6 +43,12 @@ def generate_launch_description():
             package="armatron",
             executable="scan_filter",
             name="scan_filter"
+        ),
+
+        Node(
+            package="armatron",
+            executable="lidar_demand",
+            name="lidar_demand",
         ),
 
         # Local sensor odometry must remain available even when no map profile
