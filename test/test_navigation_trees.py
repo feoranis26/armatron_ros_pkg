@@ -14,8 +14,9 @@ class NavigationTreesTest(unittest.TestCase):
         rewrites = next(n.value for n in ast.walk(launch)
                         if isinstance(n, ast.keyword) and n.arg == 'param_rewrites')
         params = dict(zip((k.value for k in rewrites.keys), rewrites.values))
-        plugins = yaml.safe_load((root / 'config/nav2/navigation.yaml').read_text())[
-            'bt_navigator']['ros__parameters']['plugin_lib_names']
+        navigator = yaml.safe_load((root / 'config/nav2/navigation.yaml').read_text())[
+            'bt_navigator']['ros__parameters']
+        plugins = navigator['plugin_lib_names']
         required = {
             'ComputePathToPose': 'nav2_compute_path_to_pose_action_bt_node',
             'ComputePathThroughPoses': 'nav2_compute_path_through_poses_action_bt_node',
@@ -31,6 +32,10 @@ class NavigationTreesTest(unittest.TestCase):
         builtins = {'root', 'BehaviorTree', 'ReactiveFallback', 'ReactiveSequence',
                     'SequenceWithMemory'}
         for kind in ('to_pose', 'through_poses'):
+            # Humble RewrittenYaml silently ignores absent parameter keys.
+            key = f'default_nav_{kind}_bt_xml'
+            self.assertIn(key, navigator)
+            self.assertIsInstance(navigator[key], str)
             expression = params[f'bt_navigator.ros__parameters.default_nav_{kind}_bt_xml']
             filename = next(n.value for n in ast.walk(expression)
                             if isinstance(n, ast.Constant) and isinstance(n.value, str)

@@ -63,6 +63,9 @@ bt_navigator:
     default_server_timeout: 20
     # navigation.launch.py overrides BOTH default BT files with our no-backup
     # trees. Humble loads both during activation, even for single-goal use.
+    # Humble RewrittenYaml only replaces existing keys.
+    default_nav_to_pose_bt_xml: ""
+    default_nav_through_poses_bt_xml: ""
     plugin_lib_names:
     - nav2_compute_path_to_pose_action_bt_node
     - nav2_compute_path_through_poses_action_bt_node
