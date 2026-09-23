@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -85,13 +86,17 @@ def command_save(args):
     except OSError as error:
         shutil.rmtree(staging, ignore_errors=True)
         raise RuntimeError(f"Cannot invoke ros2 to save the map: {error}") from error
-    if completed.returncode != 0 or "result: 0" not in completed.stdout:
-        shutil.rmtree(staging, ignore_errors=True)
+    # Humble ros2service prints repr(response), e.g.
+    # SerializePoseGraph_Response(result=0), rather than YAML (result: 0).
+    response = completed.stdout.partition('response:')[2]
+    result = re.search(r'\bresult\s*[=:]\s*(-?\d+)\b', response)
+    if completed.returncode != 0 or result is None or int(result.group(1)) != 0:
         raise RuntimeError("slam_toolbox serialization failed:\n" + completed.stdout + completed.stderr)
 
-    artifacts = list(staging.iterdir())
-    if not artifacts:
-        raise RuntimeError("slam_toolbox reported success but produced no map artifacts")
+    artifacts = [filename.with_suffix(suffix) for suffix in ('.posegraph', '.data')]
+    if any(not path.is_file() or path.stat().st_size == 0 for path in artifacts):
+        raise RuntimeError("slam_toolbox reported success but did not produce both nonempty "
+                           f"map.posegraph and map.data files; inspect {staging}")
     previous = directory / "previous"
     current = directory / "current"
     shutil.rmtree(previous, ignore_errors=True)
