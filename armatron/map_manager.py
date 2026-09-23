@@ -112,36 +112,40 @@ def command_interactive(args):
 
 
 def parser():
-    result = argparse.ArgumentParser(prog="armatron-map")
+    result = argparse.ArgumentParser(
+        prog="ros2 run armatron armatron-map",
+        description="Create, select and save ARMATRON map profiles.",
+        epilog="First map: new primary, then select primary --mode mapping.")
     result.add_argument("--state-dir", type=Path, dest="root", default=state_root())
     commands = result.add_subparsers(dest="command")
-    commands.add_parser("list").set_defaults(func=command_list)
-    status = commands.add_parser("status")
+    commands.add_parser("list", help="List available profiles").set_defaults(func=command_list)
+    status = commands.add_parser("status", help="Show the active profile and mode")
     status.add_argument("--json", action="store_true")
     status.set_defaults(func=command_status)
-    create = commands.add_parser("new")
+    create = commands.add_parser("new", help="Create an empty profile")
     create.add_argument("name")
     create.set_defaults(func=command_new)
-    select = commands.add_parser("select")
+    select = commands.add_parser("select", help="Select a profile and optionally its mode")
     select.add_argument("name")
     select.add_argument("--mode", choices=("mapping", "localization"))
     select.set_defaults(func=command_select)
-    mode = commands.add_parser("set-mode")
+    mode = commands.add_parser("set-mode", help="Choose mapping or localization")
     mode.add_argument("mode", choices=("mapping", "localization"))
     mode.set_defaults(func=command_set_mode)
-    save = commands.add_parser("save")
+    save = commands.add_parser("save", help="Serialize the active SLAM map")
     save.add_argument("--timeout", type=float, default=20.0)
     save.set_defaults(func=command_save)
     return result
 
 
 def main():
-    args = parser().parse_args()
+    cli = parser()
+    args = cli.parse_args()
+    if args.command is None:
+        cli.print_help()
+        return 0
     try:
-        if args.command is None:
-            command_interactive(args)
-        else:
-            args.func(args)
+        args.func(args)
     except (RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
         print(f"armatron-map: {error}", file=sys.stderr)
         return 1
