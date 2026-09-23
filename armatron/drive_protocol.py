@@ -33,10 +33,12 @@ class WheelDriver(UDPDevice):
         
         if data[0] == "spd":
             values = data[1].split(",")
-            self.speed[0] = float(values[0]) / ROTS_PER_METER
-            self.speed[1] = float(values[1]) / ROTS_PER_METER
+            # Pi wheel telemetry is the negative of its chassis input.
+            # Undo that and the command-side axis/unit conversion in drive().
+            self.speed[0] = -float(values[0]) / ROTS_PER_MPS
+            self.speed[1] = float(values[1]) / ROTS_PER_MPS
             if len(values) > 2:
-                self.speed[2] = float(values[2])
+                self.speed[2] = -float(values[2]) / ROTS_PER_RADS_PS
 
         if data[0] == "pos":
             values = data[1].split(",")

@@ -125,8 +125,6 @@ class ArmatronDrive(Node):
         except AssertionError:
             pass
 
-        self.odom_update()
-
         if self.absolute or self.hold != 0:
             self.hdg_compensation = self.heading - self.hold
             self.speed_x = self.tgt_speed[0] * math.cos(self.hdg_compensation) + self.tgt_speed[1] * math.sin(self.hdg_compensation)
@@ -154,8 +152,10 @@ class ArmatronDrive(Node):
         self.position.x += pos_diff[0] * math.cos(self.heading) + -pos_diff[1] * math.sin(self.heading)
         self.position.y += pos_diff[1] * math.cos(self.heading) + pos_diff[0] * math.sin(self.heading)
 
-        self.odom_speed[0] = self.driver.speed[0] * math.cos(self.heading) + -self.driver.speed[1] * math.sin(self.heading)
-        self.odom_speed[1] = self.driver.speed[1] * math.cos(self.heading) + self.driver.speed[0] * math.sin(self.heading)
+        # Odometry.twist is expressed in child_frame_id (base_link), not odom.
+        self.odom_speed[0] = self.driver.speed[0]
+        self.odom_speed[1] = self.driver.speed[1]
+        self.odom_update()
 
         self.driver.drive(self.speed_x, self.speed_y, self.speed_th)
         self.driver.update()
