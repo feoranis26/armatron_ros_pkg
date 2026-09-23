@@ -65,6 +65,10 @@ normal localization launch parameters when it needs a different initial pose.
 
 ## systemd installation
 
+All service units explicitly set `ROS_DOMAIN_ID=67`. Set the same value in
+interactive terminals before running RViz, ROS CLI tools, or manual launches:
+`export ROS_DOMAIN_ID=67`.
+
 Unit files are source-controlled under `systemd/pi` and `systemd/x86`.
 Link the selected host's checked-out units with:
 

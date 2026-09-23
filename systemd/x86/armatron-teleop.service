@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=feoranis
 Environment=ARMATRON_WORKSPACE=/home/feoranis/dev_ws
+Environment=ROS_DOMAIN_ID=67
 Environment=SDL_VIDEODRIVER=dummy
 ExecStart=/home/feoranis/dev_ws/install/armatron/lib/armatron/run-armatron ros2 launch joy_teleop joy_teleop_ubuntu.launch.py
 KillSignal=SIGINT

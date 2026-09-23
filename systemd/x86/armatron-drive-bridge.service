@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=feoranis
 Environment=ARMATRON_WORKSPACE=/home/feoranis/dev_ws
+Environment=ROS_DOMAIN_ID=67
 ExecStart=/home/feoranis/dev_ws/install/armatron/lib/armatron/run-armatron ros2 run armatron drive
 KillSignal=SIGINT
 TimeoutStopSec=15
