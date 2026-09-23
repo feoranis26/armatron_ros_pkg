@@ -52,7 +52,7 @@ class UDPDevice:
 
         print("Receiving...")
 
-        while True:
+        while not self.stop_flag:
             try:
                 data, _ = self.port.recvfrom(1024)
             except TimeoutError:
@@ -60,6 +60,10 @@ class UDPDevice:
             except ConnectionRefusedError:
                 print("Connection refused!")
                 continue
+            except OSError:
+                if self.stop_flag:
+                    break
+                raise
 
             if self.pkt_header != None:
                 if not data.startswith(self.pkt_header):
@@ -90,7 +94,7 @@ class UDPDevice:
         pass
 
     def connection_thread(self):
-        while True:
+        while not self.stop_flag:
             try:
                 if millis() - self.last_message > 1000:
                     self.send("connect")

@@ -91,8 +91,6 @@ class ArmatronDrive(Node):
 
 
     def stop(self):
-        self.stop_event.set()
-
         self.driver.stop()
         self.gyro.stop()
         #super().stop()

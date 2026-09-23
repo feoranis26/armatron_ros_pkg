@@ -46,35 +46,6 @@ Start the committed RViz layout with:
 ros2 launch armatron visualization.launch.py
 ```
 
-## Posegraphs
-
-`armatron-posegraph` stores files in
-`~/.local/share/armatron/posegraphs` by default (override with
-`ARMATRON_POSEGRAPH_DIR`). It uses the standard `slam_toolbox` serialization
-services, so `slam_toolbox` must already be running.
-
-```text
-armatron-posegraph save lab1
-armatron-posegraph load lab1
-armatron-posegraph list
-```
-
-Saving an existing name requires `--force`.
-Loading starts the restored graph at the current origin. Use slam_toolbox's
-normal localization launch parameters when it needs a different initial pose.
-
-## Odometry recovery
-
-After a collision stalls the steppers, stop the robot and cancel its Nav2 goal.
-Use a previously saved posegraph and the robot's known map-frame pose to reset
-wheel odometry and reload SLAM for scan matching:
-
-```text
-armatron-navigation-recover lab1 --x 4.2 --y 1.8 --yaw-degrees 90 --confirm-stationary
-```
-
-Confirm the recovered pose in RViz before sending another navigation goal.
-
 ## systemd installation
 
 All service units explicitly set `ROS_DOMAIN_ID=67`. Set the same value in

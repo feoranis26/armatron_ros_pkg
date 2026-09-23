@@ -22,16 +22,14 @@ setup(
     zip_safe=True,
     maintainer='feoranis',
     maintainer_email='feoranis@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='ARMATRON ROS bridge, sensor bringup, and navigation tools.',
+    license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
             'drive = armatron.drive_bridge:main',
             'scan_filter = armatron.scan_filter:main',
             'gyro_pub = armatron.gyro_pub:main',
-            'armatron-posegraph = armatron.posegraph:main',
-            'armatron-navigation-recover = armatron.navigation_recovery:main',
         ],
     },
 )
