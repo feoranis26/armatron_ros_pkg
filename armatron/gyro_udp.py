@@ -29,7 +29,7 @@ class UDPGyro(UDPDevice):
         pass
 
 if __name__ == "__main__":
-    gyro = UDPGyro("127.0.0.1", 11755, 11757)
+    gyro = UDPGyro("10.8.3.56", 11755, 11757)
 
     while True:
         print(gyro.angle)
