@@ -96,6 +96,9 @@ For a normal code/unit-file refresh, build as `feoranis` and let the helper use
 ./src/armatron_ros_pkg/systemd/refresh.sh x86
 ```
 
+The helper clears only `build/armatron` before building. This avoids stale
+setuptools manifests retaining a deleted launch file such as `amcl.launch.py`.
+
 The linker refuses to replace a regular file, reloads systemd, and does not
 enable or start any unit. Run `systemd-analyze verify` before enabling a target.
 The units intentionally use
