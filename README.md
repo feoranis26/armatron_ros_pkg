@@ -23,7 +23,7 @@ The x86 processor runs four responsibilities:
 ```text
 ros2 launch joy_teleop joy_teleop_ubuntu.launch.py
 ros2 launch armatron hardware.launch.py
-ros2 launch armatron navigation.launch.py slam:=true
+ros2 launch armatron navigation.launch.py slam:=True
 ros2 run armatron drive
 ```
 
@@ -37,7 +37,7 @@ base is presently unreliable. When it is healthy, enable strafing without
 switching parameter files:
 
 ```text
-ros2 launch armatron navigation.launch.py slam:=true holonomic:=true
+ros2 launch armatron navigation.launch.py slam:=True holonomic:=true
 ```
 
 Start the committed RViz layout with:
@@ -62,6 +62,18 @@ armatron-posegraph list
 Saving an existing name requires `--force`.
 Loading starts the restored graph at the current origin. Use slam_toolbox's
 normal localization launch parameters when it needs a different initial pose.
+
+## Odometry recovery
+
+After a collision stalls the steppers, stop the robot and cancel its Nav2 goal.
+Use a previously saved posegraph and the robot's known map-frame pose to reset
+wheel odometry and reload SLAM for scan matching:
+
+```text
+armatron-navigation-recover lab1 --x 4.2 --y 1.8 --yaw-degrees 90 --confirm-stationary
+```
+
+Confirm the recovered pose in RViz before sending another navigation goal.
 
 ## systemd installation
 

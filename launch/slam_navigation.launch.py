@@ -13,6 +13,6 @@ def generate_launch_description():
             PythonLaunchDescriptionSource(PathJoinSubstitution([
                 FindPackageShare('armatron'), 'launch', 'navigation.launch.py'
             ])),
-            launch_arguments={'slam': 'true'}.items(),
+            launch_arguments={'slam': 'True'}.items(),
         )
     ])

@@ -1,6 +1,7 @@
 """Small command-line interface for slam_toolbox posegraph files."""
 
 import argparse
+import math
 import os
 from pathlib import Path
 import subprocess
@@ -29,8 +30,8 @@ def call_service(service, service_type, payload):
         raise RuntimeError('ros2 is not available; source the ROS 2 environment first.')
     except subprocess.CalledProcessError as error:
         raise RuntimeError(
-            f'slam_toolbox did not accept the request ({error.returncode}). '
-            'Confirm that it is running and exposes its standard services.'
+            f'{service} did not accept the request ({error.returncode}). '
+            'Confirm that the service is available in ROS domain 67.'
         )
 
 
@@ -47,7 +48,7 @@ def save(name, force):
     )
 
 
-def load(name):
+def load(name, x=0.0, y=0.0, yaw=0.0):
     path = posegraph_path(name)
     if not path.exists():
         raise RuntimeError(f'{path} does not exist.')
@@ -56,8 +57,9 @@ def load(name):
         '/slam_toolbox/deserialize_map',
         'slam_toolbox/srv/DeserializePoseGraph',
         "{filename: '" + str(path) +
-        "', match_type: 2, initial_pose: {position: {x: 0.0, y: 0.0, z: 0.0}, "
-        "orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}",
+        "', match_type: 2, initial_pose: {position: {x: " + str(x) +
+        ", y: " + str(y) + ", z: 0.0}, orientation: {x: 0.0, y: 0.0, z: " +
+        str(math.sin(yaw / 2.0)) + ", w: " + str(math.cos(yaw / 2.0)) + "}}}",
     )
 
 
@@ -78,13 +80,17 @@ def main(argv=None):
     save_parser.add_argument('--force', action='store_true')
     load_parser = subcommands.add_parser('load', help='load a saved posegraph')
     load_parser.add_argument('name')
+    load_parser.add_argument('--x', type=float, default=0.0)
+    load_parser.add_argument('--y', type=float, default=0.0)
+    load_parser.add_argument('--yaw', type=float, default=0.0,
+                             help='initial map-frame yaw in radians')
     subcommands.add_parser('list', help='list saved posegraphs')
     args = parser.parse_args(argv)
     try:
         if args.command == 'save':
             save(args.name, args.force)
         elif args.command == 'load':
-            load(args.name)
+            load(args.name, args.x, args.y, args.yaw)
         else:
             list_posegraphs()
     except RuntimeError as error:

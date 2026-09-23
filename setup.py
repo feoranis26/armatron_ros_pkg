@@ -31,6 +31,7 @@ setup(
             'scan_filter = armatron.scan_filter:main',
             'gyro_pub = armatron.gyro_pub:main',
             'armatron-posegraph = armatron.posegraph:main',
+            'armatron-navigation-recover = armatron.navigation_recovery:main',
         ],
     },
 )
