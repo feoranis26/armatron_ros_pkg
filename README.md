@@ -48,6 +48,9 @@ ros2 launch armatron visualization.launch.py
 
 ## Fused odometry and map profiles
 
+For operator-assisted AMCL recovery followed by a verified slam_toolbox handoff,
+see [global relocalization](docs/global-relocalization.md).
+
 For isolated costmap noise, profile self-return masks, and the optional AMCL
 profile mode, see [scan masks and AMCL](docs/scan-masks-and-amcl.md).
 

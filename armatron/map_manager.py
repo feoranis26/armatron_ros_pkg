@@ -146,6 +146,11 @@ def command_global_localize(args):
     print('AMCL global localization requested. Verify convergence before sending a goal.')
 
 
+def command_relocalize(args):
+    from .relocalization import run
+    run(args)
+
+
 def command_interactive(args):
     names = profiles(args.root)
     command_status(args)
@@ -185,6 +190,11 @@ def parser():
     global_loc = commands.add_parser('global-localize', help='Spread AMCL particles across the map')
     global_loc.add_argument('--timeout', type=float, default=20.0)
     global_loc.set_defaults(func=command_global_localize)
+    recover = commands.add_parser('relocalize', help='Operator-assisted AMCL bootstrap and verified SLAM handoff (navigation must be stopped)')
+    recover.add_argument('--timeout', type=float, default=300.0, help='Maximum operator search time in seconds')
+    recover.add_argument('--distance-tolerance', type=float, default=0.3, help='Maximum SLAM handoff discrepancy in metres')
+    recover.add_argument('--angle-tolerance', type=float, default=0.25, help='Maximum SLAM handoff discrepancy in radians')
+    recover.set_defaults(func=command_relocalize)
     return result
 
 
@@ -196,7 +206,10 @@ def main():
         return 0
     try:
         args.func(args)
-    except (RuntimeError, ValueError, subprocess.TimeoutExpired) as error:
+    except KeyboardInterrupt:
+        print("armatron-map: interrupted", file=sys.stderr)
+        return 130
+    except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as error:
         print(f"armatron-map: {error}", file=sys.stderr)
         return 1
     return 0

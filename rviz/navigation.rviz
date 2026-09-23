@@ -43,6 +43,22 @@ Visualization Manager:
       Name: Local Plan
       Topic:
         Value: /local_plan
+    - Class: nav2_rviz_plugins/ParticleCloud
+      Enabled: true
+      Name: AMCL Particles
+      Color: 0; 180; 0
+      Shape: Arrow (Flat)
+      Topic:
+        Value: /particle_cloud
+        Reliability Policy: Best Effort
+        Durability Policy: Volatile
+    - Class: rviz_default_plugins/PoseWithCovariance
+      Enabled: true
+      Name: AMCL Pose
+      Topic:
+        Value: /amcl_pose
+        Reliability Policy: Reliable
+        Durability Policy: Transient Local
     - Class: rviz_default_plugins/Polygon
       Enabled: true
       Name: Local Footprint
