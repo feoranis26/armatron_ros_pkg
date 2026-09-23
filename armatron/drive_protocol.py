@@ -1,4 +1,6 @@
 from .udp_device import UDPDevice
+import math
+import time
 
 #ROTS_PER_METER = 2   #
 #ROTS_PER_MPS = 2.5        #For some reason these don't match?!
@@ -19,6 +21,8 @@ class WheelDriver(UDPDevice):
         self.speed = [0.0, 0.0, 0.0]
         self.position = [0.0, 0.0]
         self.safety_inhibited = False
+        self.speed_sample = None
+        self.safety_sample = None
 
         self.pkt_header = bytes([0xFA])
         self.pkt_footer = bytes([0xFB])
@@ -33,12 +37,15 @@ class WheelDriver(UDPDevice):
         
         if data[0] == "spd":
             values = data[1].split(",")
+            if len(values) != 3 or not all(math.isfinite(float(v)) for v in values):
+                return
             # Pi wheel telemetry is the negative of its chassis input.
             # Undo that and the command-side axis/unit conversion in drive().
             self.speed[0] = -float(values[0]) / ROTS_PER_MPS
             self.speed[1] = float(values[1]) / ROTS_PER_MPS
             if len(values) > 2:
                 self.speed[2] = -float(values[2]) / ROTS_PER_RADS_PS
+            self.speed_sample = (tuple(self.speed), time.monotonic())
 
         if data[0] == "pos":
             values = data[1].split(",")
@@ -46,7 +53,9 @@ class WheelDriver(UDPDevice):
             self.position[1] = float(values[1]) / ROTS_PER_METER
 
         if data[0] == "safety":
-            self.safety_inhibited = data[1] == "1"
+            if data[1] in ('0', '1'):
+                self.safety_inhibited = data[1] == "1"
+                self.safety_sample = (self.safety_inhibited, time.monotonic())
 
     """def print_thread(self):
         while True:

@@ -1,0 +1,14 @@
+motion_consistency_monitor:
+  ros__parameters:
+    auto_rearm: true
+    quiet_seconds: 3.0
+    use_drive_fusion: true
+    distance_floor: 0.015
+    relative_error: 0.4
+    angle_floor: 0.10
+    timing_tolerance: 0.2
+    rotation_translation_tolerance: 0.125
+    # Initial uncertainty assumptions; validate with actual measurements.
+    drive_velocity_variance: 0.0025
+    rf_position_variance: 0.0004
+    rf_yaw_variance: 0.0025

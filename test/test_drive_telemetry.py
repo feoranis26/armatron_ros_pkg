@@ -1,10 +1,22 @@
 """Check the command/telemetry boundary against Pi wheel kinematics."""
 import unittest
+from unittest.mock import patch
 
 from armatron.drive_protocol import WheelDriver, ROTS_PER_MPS, ROTS_PER_RADS_PS
 
 
 class DriveTelemetryTest(unittest.TestCase):
+    def test_safety_feedback_is_observed_and_timestamped(self):
+        driver = WheelDriver.__new__(WheelDriver)
+        driver.safety_sample = None
+        with patch('time.monotonic', return_value=12.0):
+            driver.process(['safety', '1'])
+            self.assertEqual(driver.safety_sample, (True, 12.0))
+            driver.process(['safety', 'broken'])
+            self.assertEqual(driver.safety_sample, (True, 12.0))
+            driver.process(['safety', '0'])
+            self.assertEqual(driver.safety_sample, (False, 12.0))
+
     def test_body_velocity_round_trip(self):
         # Simulate settled Pi wheel speeds for ROS body-frame commands.
         for vx, vy, wz in [(0.2, 0., 0.), (-0.2, 0., 0.),

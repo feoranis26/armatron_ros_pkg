@@ -4,7 +4,7 @@ import time
 import rclpy
 from rclpy.node import Node
 
-from std_msgs.msg import Float64, String
+from std_msgs.msg import Float64, String, Bool
 from std_srvs.srv import Empty
 from geometry_msgs.msg import Twist, Point, Quaternion
 from nav_msgs.msg import Odometry
@@ -67,6 +67,14 @@ class ArmatronDrive(Node):
             self.declare_parameter('gyro_yaw_variance', 0.0025).value, Imu)
         self.gyro_was_fresh = None
         self.last_gyro_warning = float('-inf')
+        self.inhibit_requested = None
+        self.last_safety_send = float('-inf')
+        self.last_safety_sample = None
+        self.last_speed_sample = None
+        self.monitor_seen_at = time.monotonic()
+        self.safety_publisher = self.create_publisher(Bool, '/drive/safety_inhibited', 10)
+        self.create_subscription(Bool, '/drive/inhibit_request', self.on_inhibit_request, 10)
+        self.create_subscription(Bool, '/drive/odometry_valid', self.on_monitor_heartbeat, 10)
         self.safety_stop_service = self.create_service(
             Empty, "/drive/safety_stop", self.on_safety_stop)
         self.safety_reset_service = self.create_service(
@@ -109,6 +117,24 @@ class ArmatronDrive(Node):
         #super().stop()
 
     def tick(self):
+        now = time.monotonic()
+        if now - self.monitor_seen_at > 1.0:
+            if self.inhibit_requested is not True:
+                self.get_logger().error('Motion monitor heartbeat lost; inhibiting propulsion')
+            self.inhibit_requested = True
+        safety = self.driver.safety_sample
+        acknowledged = safety is not None and now - safety[1] < 0.5
+        if acknowledged and safety[1] != self.last_safety_sample:
+            self.safety_publisher.publish(Bool(data=safety[0]))
+            self.last_safety_sample = safety[1]
+        if self.inhibit_requested is not None and now - self.last_safety_send >= 0.2:
+            if not acknowledged or safety[0] != self.inhibit_requested:
+                if self.inhibit_requested:
+                    self.driver.safety_stop()
+                else:
+                    self.driver.safety_reset()
+                self.last_safety_send = now
+        blocked = not acknowledged or safety[0] or self.inhibit_requested is True
         if time.time() - self.lastSpeedReceived > 1:
             self.set_speed(Twist())
 
@@ -173,7 +199,10 @@ class ArmatronDrive(Node):
         self.odom_speed[1] = self.driver.speed[1]
         self.odom_update()
 
-        self.driver.drive(self.speed_x, self.speed_y, self.speed_th)
+        if blocked:
+            self.driver.drive(0.0, 0.0, 0.0)
+        else:
+            self.driver.drive(self.speed_x, self.speed_y, self.speed_th)
         self.driver.update()
 
     def print_status(self):
@@ -196,6 +225,11 @@ class ArmatronDrive(Node):
 
 
     def odom_update(self):
+        sample = self.driver.speed_sample
+        if (sample is None or time.monotonic() - sample[1] > 0.5 or
+                sample[1] == self.last_speed_sample):
+            return
+        self.last_speed_sample = sample[1]
         odom = Odometry()
         odom.header.stamp = self.get_clock().now().to_msg()
         odom.header.frame_id = self.odom_frame_id
@@ -204,20 +238,31 @@ class ArmatronDrive(Node):
         odom.pose.pose.position.z = 0.0
         odom.pose.pose.orientation = self.orientation
         odom.child_frame_id = self.base_frame_id
-        odom.twist.twist.linear.x = self.odom_speed[0]
-        odom.twist.twist.linear.y = self.odom_speed[1]
-        odom.twist.twist.angular.z = float(self.driver.speed[2] or 0.0)
+        odom.twist.twist.linear.x = sample[0][0]
+        odom.twist.twist.linear.y = sample[0][1]
+        odom.twist.twist.angular.z = sample[0][2]
         self.odom_publisher.publish(odom)
 
     def on_safety_stop(self, request, response):
+        self.inhibit_requested = True
         self.driver.safety_stop()
         self.get_logger().error("Drive safety inhibit requested")
         return response
 
     def on_safety_reset(self, request, response):
+        self.inhibit_requested = False
+        self.set_speed(Twist())
         self.driver.safety_reset()
         self.get_logger().warn("Drive safety inhibit reset requested")
         return response
+
+    def on_inhibit_request(self, message):
+        self.inhibit_requested = message.data
+        if message.data:
+            self.set_speed(Twist())
+
+    def on_monitor_heartbeat(self, message):
+        self.monitor_seen_at = time.monotonic()
 
     def on_vel_msg_received(self, msg):
         self.get_logger().debug(f"Received spd msg l x: {msg.linear.x} y: {msg.linear.y} z: {msg.linear.z} a x: {msg.angular.x} y: {msg.angular.y} z: {msg.angular.z}")

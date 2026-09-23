@@ -72,19 +72,62 @@ on the floor and run `bash ./src/armatron/systemd/reset-odometry.sh` on the x86
 (adjust the checkout directory name if needed). This stops navigation and
 teleop, then restarts the drive bridge and hardware group, including RF2O and
 the EKF. Navigation and teleop stay stopped; explicitly start teleop to resume
-manual testing. The Pi safety latch is preserved. Raw drive heading still uses
+manual testing. The script does not reset the Pi latch; the monitor may re-arm
+it after the normal healthy stationary dwell. Raw drive heading still uses
 the gyro and does not share RF2O's zero starting heading. Restart localization
 and provide an initial pose as needed before resuming navigation after a reset.
 
-`navigation.launch.py` starts RF2O as `/odom/rf2o` with TF disabled, and
+`hardware.launch.py` starts RF2O as `/odom/rf2o` with TF disabled, and
 `robot_localization` as the sole `odom -> base_link` authority. The stepper
 estimate remains available at `/odom/drive_raw` for comparison and for the
-motion-consistency monitor. A persistent disagreement latches the Pi drive
-inhibit; reset it only after investigating with:
+motion-consistency monitor. The monitor supplies `/odom/drive_validated` to
+the EKF only while measurements are fresh and consistent. `/odom/rf2o_fusion`
+supplies the independent lidar measurement with explicit covariance; RF2O and
+gyro remain available during a drive fault. Raw topics remain diagnostic data.
+
+The monitor compares integrated body velocities against RF2O displacement over
+matching 0.75 s and 2.5 s windows. Distance/angle noise floors, proportional
+error, timing tolerance, and rotation-offset uncertainty replace the old speed
+cutoff. A suspect window immediately closes the wheel gate; three distinct
+disagreeing scans persisting for at least 0.25 s request a motor inhibit. Sensor
+loss also requests an inhibit. The bridge retries the UDP request until fresh
+Pi telemetry confirms the state, and clamps commands locally while stopped or
+without fresh Pi acknowledgement. Loss of monitor heartbeat also inhibits.
+
+Status distinguishes `STOPPING` (awaiting acknowledgement), `STALLED`, and
+`RESETTING` (awaiting reset acknowledgement). `/drive/safety_inhibited` now
+reports fresh Pi feedback, not the monitor's requested state. Observe it with
+`/motion_consistency/status` and `/drive/odometry_valid`.
+
+Automatic re-arm is enabled by default: fresh drive/RF2O/gyro data, a confirmed
+Pi latch, negligible measured motion, and zero motion commands must persist for
+three seconds. A reset request is then retried until the Pi confirms release.
+A continuing command into an obstacle prevents release. This does not cancel,
+resubmit, or resume Nav2 goals, nor implement retreat; Nav2 must terminate its
+failed motion attempt before re-arm can complete. Manual re-arm requests use
+the same health and quiet checks:
 
 ```text
 ros2 service call /motion_consistency/reset std_srvs/srv/Empty
 ```
+
+Settings are in `config/odometry/monitor.yaml`; restart hardware after changing
+them. `auto_rearm: false` requires the operator request above. For an RF2O+gyro
+baseline, set `use_drive_fusion: false`: raw steps are still recorded and the
+motor monitor stays active, but no wheel input reaches the EKF. Covariances and
+detection tolerances are initial assumptions; finite detection time means some
+pre-fault displacement error remains possible, especially below scan noise.
+Raw drive pose is not corrected retroactively after a stall.
+
+Deploy this change to the Pi `armatron_drive` package first and then the x86
+`armatron` package. With fresh sensors and zero commands, expect automatic
+startup re-arm after the dwell. Test ordinary slow/fast motion first, then a
+controlled low-speed restraint; confirm Pi feedback says inhibited and the
+validated drive topic stops publishing. Release commands and confirm re-arm.
+Record `/odom/drive_validated`, `/odom/rf2o_fusion`, `/imu/gyro`,
+`/drive/safety_inhibited`, `/drive/odometry_valid`, and monitor status alongside
+the raw odometry for validation. The bridge now requires the monitor heartbeat
+for propulsion, including teleop; running only the bridge is insufficient.
 
 Navigation requires an explicit map profile. Runtime state defaults to
 `/var/lib/armatron` under the systemd service and can be redirected with

@@ -78,12 +78,18 @@ class UDPDevice:
                     continue
                 data = data.removesuffix(self.pkt_footer)
 
-            data = data.decode("UTF-8")
+            try:
+                data = data.decode("UTF-8")
+            except UnicodeDecodeError:
+                continue
             datas = data.split(";")
 
             for s in datas:
                 spl = s.split(":")
-                self.process(spl)
+                try:
+                    self.process(spl)
+                except (ValueError, IndexError):
+                    continue  # A malformed datagram must not kill reception.
 
             self.last_message = millis()
 

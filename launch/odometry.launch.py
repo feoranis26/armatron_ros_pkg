@@ -25,5 +25,6 @@ def generate_launch_description():
             package="armatron",
             executable="motion_consistency",
             name="motion_consistency_monitor",
+            parameters=[PathJoinSubstitution([share, "config", "odometry", "monitor.yaml"])],
         ),
     ])
