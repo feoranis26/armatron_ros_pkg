@@ -12,10 +12,10 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 workspace=$(cd -- "${script_dir}/../../.." && pwd)
 
 cd "${workspace}"
-# setuptools records package data in this directory. Clearing only this
-# disposable build output prevents deleted launch files from surviving in its
-# manifest while retaining all other workspace build products.
-rm -rf "${workspace}/build/armatron"
+# setuptools records package data in build output and symlink-install retains
+# its old launch-file links in the package-local install tree. Both are
+# disposable package outputs; leave every other workspace package untouched.
+rm -rf "${workspace}/build/armatron" "${workspace}/install/armatron"
 colcon build --symlink-install --packages-select armatron
 sudo "${script_dir}/install.sh" "${host}"
 
