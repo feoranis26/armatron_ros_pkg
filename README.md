@@ -144,10 +144,16 @@ Navigation requires an explicit map profile. Runtime state defaults to
 ```text
 ros2 run armatron armatron-map new primary
 ros2 run armatron armatron-map select primary --mode mapping
-# drive and map, then stop navigation cleanly to serialize a revision
+# While mapping is still running, save from another terminal:
+ros2 run armatron armatron-map save
+# Wait for "Saved primary", then stop navigation before changing mode.
 ros2 run armatron armatron-map set-mode localization
 ros2 run armatron armatron-map status
 ```
+
+Manual launch does not save the posegraph on Ctrl+C. The navigation systemd
+service attempts a save in ExecStop before shutting down its processes; check
+the journal for success. Pose persistence stores only a restart pose, not a map.
 
 Mapping saves are staged and retain the prior revision. Localization mode never
 updates the selected posegraph. RF2O source remains external; see
