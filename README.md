@@ -88,6 +88,14 @@ sudo ./systemd/install.sh pi
 sudo ./systemd/install.sh x86
 ```
 
+For a normal code/unit-file refresh, build as `feoranis` and let the helper use
+`sudo` only for systemd work:
+
+```text
+./src/armatron_ros_pkg/systemd/refresh.sh pi
+./src/armatron_ros_pkg/systemd/refresh.sh x86
+```
+
 The linker refuses to replace a regular file, reloads systemd, and does not
 enable or start any unit. Run `systemd-analyze verify` before enabling a target.
 The units intentionally use
