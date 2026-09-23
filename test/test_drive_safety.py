@@ -44,6 +44,7 @@ class DriveSafetyTest(unittest.TestCase):
     def test_no_monitor_needed_but_explicit_stop_and_timeouts_work(self):
         module = load_bridge()
         node = module.ArmatronDrive.__new__(module.ArmatronDrive)
+        node.motion_blocked = False
         node.inhibit_requested = None
         node.last_safety_send = -float('inf')
         node.last_safety_sample = None
@@ -72,14 +73,19 @@ class DriveSafetyTest(unittest.TestCase):
             node.on_safety_stop(None, None)
             node.tick()
             node.driver.drive.assert_called_with(0., 0., 0.)
+            node.gyro.angle = None
+            node.tick()
+            node.gyro.angle = 0.
+            node.tick()
+            self.assertTrue(node.inhibit_requested)  # Explicit stop survives recovery.
             node.lastSpeedReceived = 100.
             node.inhibit_requested = False
             node.gyro.angle = None
             node.tick()
-            self.assertTrue(node.inhibit_requested)
+            self.assertFalse(node.inhibit_requested)
             node.driver.drive.assert_called_with(0., 0., 0.)
             node.on_safety_reset(None, None)
-            self.assertTrue(node.inhibit_requested)
+            self.assertFalse(node.inhibit_requested)
             node.gyro.angle = 0.
             node.tgt_speed = [0.4, 0., 0.]
             node.tick()
@@ -91,6 +97,8 @@ class DriveSafetyTest(unittest.TestCase):
             node.tick()  # Do not drive until reset is acknowledged.
             node.driver.drive.assert_called_with(0., 0., 0.)
             node.driver.safety_sample = (False, 100.)
+            node.tick()  # Transition clears pre-recovery command.
+            node.tgt_speed = [0.4, 0., 0.]
             node.tick()
             node.driver.drive.assert_called_with(0.4, 0., 0.)
             node.driver.safety_sample = (False, 99.)
@@ -104,5 +112,5 @@ class DriveSafetyTest(unittest.TestCase):
             node.heading_ready_at = 99.
             node.lastSpeedReceived = 100.
             node.tick()  # Guard death blocks drive even with fresh gyro packets.
-            self.assertTrue(node.inhibit_requested)
+            self.assertFalse(node.inhibit_requested)
             node.driver.drive.assert_called_with(0., 0., 0.)

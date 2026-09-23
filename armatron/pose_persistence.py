@@ -40,8 +40,6 @@ class PosePersistence(Node):
             self.persist()
 
     def persist(self):
-        if (state_root() / 'heading_fault.json').exists():
-            return
         if self.last_pose is None:
             return
         state = load_state()

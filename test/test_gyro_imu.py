@@ -16,8 +16,8 @@ class GyroImuTest(unittest.TestCase):
         self.assertIsNone(adapter.message(None, 10, None, 'base_link'))
         self.assertIsNone(adapter.message((90., 8), 10, None, 'base_link'))
         msg = adapter.message((90., 10), 10, 'stamp', 'base_link')
-        self.assertAlmostEqual(msg.orientation.z, -math.sqrt(0.5))
-        self.assertAlmostEqual(msg.orientation.w, math.sqrt(0.5))
+        self.assertAlmostEqual(msg.orientation.z, 0.)
+        self.assertAlmostEqual(msg.orientation.w, 1.)
         self.assertEqual(msg.header.frame_id, 'base_link')
         self.assertEqual(msg.orientation_covariance[8], 0.0025)
         self.assertEqual(msg.angular_velocity_covariance[0], -1.)
@@ -29,3 +29,15 @@ class GyroImuTest(unittest.TestCase):
         for value in (0., -1., float('nan'), float('inf')):
             with self.assertRaises(ValueError):
                 GyroImuAdapter(value, imu_message)
+
+    def test_recovery_rebases_sensor_origin_and_tracks_new_rotation(self):
+        adapter = GyroImuAdapter(.0025, imu_message)
+        adapter.seed_yaw = 1.2
+        adapter.message((90., 10.), 10., None, 'base_link')
+        self.assertAlmostEqual(adapter.yaw, 1.2)
+        adapter.message((80., 10.1), 10.1, None, 'base_link')
+        before = adapter.yaw
+        adapter.message((0., 12.), 12., None, 'base_link')
+        self.assertAlmostEqual(adapter.yaw, before)
+        adapter.message((10., 12.1), 12.1, None, 'base_link')
+        self.assertAlmostEqual(adapter.yaw, before-math.radians(10))

@@ -11,7 +11,7 @@ class ScanGeometryTest(unittest.TestCase):
         root = Path(__file__).parents[1]
         p = yaml.safe_load((root/'config/odometry/scan_filter.yaml').read_text())['scan_filter']['ros__parameters']
         boxes = validate_boxes(json.loads(p['profile_boxes']))
-        self.assertEqual(len(boxes), 4)
+        self.assertGreaterEqual(len(boxes), 4)  # Additional configured self-masks are allowed.
         for x,y,*_ in boxes:
             distance, angle = math.hypot(x,y), math.atan2(y,x)
             self.assertTrue(math.isnan(mask_ranges([distance], angle, 0., .1, 10., boxes, p['mask_padding'])[0]))

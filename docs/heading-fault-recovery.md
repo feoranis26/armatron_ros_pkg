@@ -1,53 +1,52 @@
-# Heading loss fail-safe
+# Heading loss and automatic recovery
 
-Gyro loss is a sensor fault, distinct from ordinary lidar/step disagreement.
-The latter remains diagnostic and does not inhibit propulsion.
+Gyro loss temporarily blocks propulsion and filtered scans. It does not set the
+Pi safety latch or require an operator reset. Ordinary wheel/LiDAR disagreement
+remains diagnostic and does not inhibit propulsion.
 
-The bridge blocks commands without fresh gyro packets and a fresh heading-guard
-heartbeat. Loss after readiness latches the existing Pi safety stop. Reset requests
-are refused while the gyro/guard is unavailable. No automatic motor reset occurs.
+The heading guard accepts only fresh, increasing `/imu/gyro` timestamps with a
+valid orientation. After one second without a sample it pauses the EKF. Startup
+and recovery require 0.3 seconds of fresh observations. A missing guard heartbeat
+blocks the drive and scans after 0.3 seconds but does not latch either condition.
 
-The heading guard monitors actual timestamped `/imu/gyro` messages, not repeated
-status strings. It latches after one second without a valid new sample, or after
-five seconds of startup with no valid sample. Replayed/duplicate timestamps do not
-feed it. Scan forwarding waits for readiness and fails closed if guard heartbeats
-stop for 0.3 seconds. This gates `/scan` to RF2O and SLAM; `/scan_raw` stays available.
+Recovery is automatic: acknowledge EKF pause, preserve its current odom pose using
+`/set_pose` (clearing stale velocity, acceleration and queued observations), then
+acknowledge `/toggle` on before publishing heading readiness. Service failures
+keep the gate closed and retry. At first startup no pose reset is necessary if
+the EKF has not published a pose yet. `/odometry/heading_status` reports WAITING,
+RECOVERING or OK, and state transitions are logged.
 
-On a latched fault the guard repeatedly requests robot_localization `/toggle`
-with `on: false`. Humble stops measurement integration/prediction while publishing
-its held state. This does not assert the robot is physically stationary or reset
-the stored velocity. Do not toggle it back on and resume an old goal.
-If the EKF service is unavailable, scan blocking and drive inhibition still operate
-independently, but the guard cannot guarantee the EKF freezes.
+The bridge publishes gyro yaw in a continuous local reference, so EKF
+`imu0_relative` is false. The first gyro sample establishes zero heading (or the
+latest filtered heading available when the bridge starts). After a packet gap
+longer than one second, the first returning angle is rebased to the last heading;
+subsequent changes are measured normally. A sensor-origin change without a packet
+gap is not detected. Physical rotation during a missing-data interval cannot be
+reconstructed; verify/reinitialize global localization if the robot was moved.
 
-The fault is recorded in `/var/lib/armatron/heading_fault.json` (or the configured
-ARMATRON_STATE_DIR). While present, map saves and restart-pose writes are refused;
-hardware/service restarts alone do not clear it. Previously saved map revisions
-remain intact. Some estimator/map error may occur before the one-second timeout;
-this protection cannot repair a corrupted session or detect a sensor that keeps
-returning fresh but physically wrong values.
+Blocked commands and hold-heading targets are discarded, including commands
+received during the interruption. Driving requires a new command after readiness
+returns. This does not cancel a Nav2 goal: an active controller can issue new
+commands after recovery. Explicit `/drive/safety_stop` and external inhibit
+requests remain latched; gyro recovery never clears those stops.
 
-## Recovery
+No heading fault file controls operation or map saving. The guard removes old
+`heading_fault.json` markers on startup when writable. To deploy, rebuild and
+restart both the x86 hardware and drive-bridge services with the updated EKF
+configuration. A Pi stop already latched by the old implementation is
+indistinguishable from an explicit stop: with controls released and heading OK,
+clear that legacy stop once using:
 
-1. Stop navigation to discard the active goal. Its automatic save will refuse
-   while the fault marker exists; this is intentional. Stop hardware next.
-2. Repair/check the gyro connection. Inspect the Pi gyro journal and confirm fresh
-   angle packets on x86. Repeated numeric angles while stationary are normal.
-3. Keep propulsion inhibited. Preserve any map revision needed for recovery.
-   Remove only `/var/lib/armatron/heading_fault.json` after repairing the fault.
-   Then start hardware to reset RF2O/EKF/guard. The drive bridge must be running
-   to supply IMU samples; start it if needed. Do not use refresh here, since it
-   also starts navigation.
-4. Confirm `/gyro/status` and `/odometry/heading_status` report OK, and verify
-   filtered pose is stable with the robot stationary. Re-establish localization
-   against a good saved map (or start a fresh map) before permitting navigation.
-5. With old navigation goals gone and controls released, explicitly call
-   `/drive/safety_reset`. Start navigation only after localization is trustworthy.
+```bash
+ros2 service call /drive/safety_reset std_srvs/srv/Empty '{}'
+```
 
-Inspect `journalctl -u armatron-hardware -b --no-pager` on x86 and
-`journalctl -u armatron-gyro -b --no-pager` on the Pi.
+Subsequent gyro outages need no reset. Do not use this reset to override a separate
+intentional drive stop.
 
-Validate with propulsion physically prevented: stop the Pi gyro service after
-healthy startup; confirm drive inhibit, no `/scan` output, held EKF pose and
-map-save refusal. Restart gyro and confirm the fault remains latched. Unit tests
-cannot replace this deployment check.
+Validation on the robot: with navigation stopped and controls released, interrupt
+and restore the Pi gyro service. Observe WAITING -> RECOVERING -> OK, held pose
+during the outage, no recovery yaw jump and no stale drive command. Verify a new
+teleop command works. Separately confirm explicit safety stops survive gyro
+recovery. Automated tests cover these control paths; actual ROS service behavior
+and hardware timing still need deployment validation.

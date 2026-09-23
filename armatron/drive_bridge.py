@@ -65,11 +65,11 @@ class ArmatronDrive(Node):
         # a claim of measured BNO accuracy. Keep configurable for validation.
         self.gyro_imu = GyroImuAdapter(
             self.declare_parameter('gyro_yaw_variance', 0.0025).value, Imu)
+        self.create_subscription(Odometry, '/odometry/filtered', self.on_filtered_odom, 1)
+        self.motion_blocked = True
         self.gyro_was_fresh = None
-        self.gyro_seen = False
         self.heading_ready = False
         self.heading_ready_at = float('-inf')
-        self.heading_seen = False
         self.create_subscription(Bool, '/odometry/heading_ready', self.on_heading_ready, 1)
         self.last_gyro_warning = float('-inf')
         self.inhibit_requested = None
@@ -125,15 +125,9 @@ class ArmatronDrive(Node):
         # navigation nor hold-heading commands are safe to execute.
         gyro_fresh = self.gyro.angle is not None
         guard_ready = self.heading_ready and now-self.heading_ready_at <= 0.3
-        if gyro_fresh:
-            self.gyro_seen = True
-        if not gyro_fresh:
-            if self.gyro_seen:
-                self.inhibit_requested = True
+        if not gyro_fresh or not guard_ready:
             self.set_speed(Twist())
-        if not guard_ready and self.heading_seen:
-            self.inhibit_requested = True
-            self.set_speed(Twist())
+            self.hold = 0.0
         safety = self.driver.safety_sample
         acknowledged = safety is not None and now - safety[1] < 0.5
         if acknowledged and safety[1] != self.last_safety_sample:
@@ -148,18 +142,18 @@ class ArmatronDrive(Node):
                 self.last_safety_send = now
         blocked = (not gyro_fresh or not guard_ready or not acknowledged or safety[0]
                    or self.inhibit_requested is True)
+        if blocked or self.motion_blocked:
+            self.set_speed(Twist())
+            self.hold = 0.0
+        self.motion_blocked = blocked
         if time.time() - self.lastSpeedReceived > 1:
             self.set_speed(Twist())
-
-        #read_yaw = self.imu.euler[0]
-        read_yaw = self.gyro.angle
-        if read_yaw is not None:
-            self.heading = -math.radians(read_yaw)
 
         imu = self.gyro_imu.message(
             self.gyro.sample, time.monotonic(),
             self.get_clock().now().to_msg(), self.base_frame_id)
         if imu is not None:
+            self.heading = self.gyro_imu.yaw
             self.gyro_imu_publisher.publish(imu)
 
         #quat = self.imu.quaternion
@@ -284,17 +278,27 @@ class ArmatronDrive(Node):
     def on_heading_ready(self, message):
         self.heading_ready = message.data
         self.heading_ready_at = time.monotonic()
-        self.heading_seen = self.heading_seen or message.data
+
+    def on_filtered_odom(self, msg):
+        if self.gyro_imu.last_sample_time is None and msg.header.frame_id == 'odom':
+            q = msg.pose.pose.orientation
+            self.gyro_imu.seed_yaw = math.atan2(2*(q.w*q.z+q.x*q.y),
+                                               1-2*(q.y*q.y+q.z*q.z))
 
     def on_vel_msg_received(self, msg):
+        if self.motion_blocked:
+            return
         self.get_logger().debug(f"Received spd msg l x: {msg.linear.x} y: {msg.linear.y} z: {msg.linear.z} a x: {msg.angular.x} y: {msg.angular.y} z: {msg.angular.z}")
         self.set_speed(msg)
         self.lastSpeedReceived = time.time()
 
     def on_hold_msg_received(self, msg):
-        self.hold = msg.value
+        if not self.motion_blocked:
+            self.hold = msg.data
 
     def on_hold_service_called(self, request, response):
+        if self.motion_blocked:
+            return response
         self.get_logger().info("Hold heading!")
         if self.hold == 0.0:
             self.hold = self.heading

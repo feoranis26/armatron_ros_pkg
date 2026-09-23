@@ -51,9 +51,9 @@ ros2 launch armatron visualization.launch.py
 For isolated costmap noise, profile self-return masks, and the optional AMCL
 profile mode, see [scan masks and AMCL](docs/scan-masks-and-amcl.md).
 
-Loss of gyro telemetry latches a heading fault: propulsion is inhibited, scans
-are blocked, EKF processing is paused, and map saves are refused. Packet recovery
-does not resume navigation. See [heading fault recovery](docs/heading-fault-recovery.md).
+Loss of gyro telemetry temporarily blocks propulsion and scans and pauses the
+EKF. Fresh heading data automatically restores operation after stale velocity
+is cleared; no gyro fault reset is required. Explicit drive stops remain latched. See [heading fault recovery](docs/heading-fault-recovery.md).
 
 The EKF uses RF2O-derived body-frame translation velocity and BNO heading
 on `/imu/gyro`. Wheel-derived yaw rate is excluded. The x86 bridge adapts the

@@ -9,6 +9,9 @@ class GyroImuAdapter:
         self.yaw_variance = yaw_variance
         self.message_type = message_type
         self.last_sample_time = None
+        self.yaw = None
+        self.offset = 0.0
+        self.seed_yaw = 0.0
 
     def message(self, sample, now, stamp, frame):
         if sample is None:
@@ -17,8 +20,16 @@ class GyroImuAdapter:
         if (not math.isfinite(degrees) or now - received > 1.0 or
                 received == self.last_sample_time):
             return None
+        raw_yaw = -math.radians(degrees)
+        if self.last_sample_time is None:
+            self.offset = self.seed_yaw - raw_yaw
+        elif received - self.last_sample_time > 1.0:
+            # Motion while the sensor is absent is unknowable. Preserve heading,
+            # rather than interpreting a restarted sensor's origin as rotation.
+            self.offset = self.yaw - raw_yaw
         self.last_sample_time = received
-        yaw = -math.radians(degrees)  # Same body-yaw convention as the bridge.
+        yaw = raw_yaw + self.offset
+        self.yaw = yaw
         msg = self.message_type()
         msg.header.stamp = stamp
         msg.header.frame_id = frame
