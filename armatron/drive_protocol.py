@@ -12,10 +12,12 @@ class WheelDriver(UDPDevice):
     def __init__(self, ip, portnum, remote_portnum) -> None:
         super().__init__(ip, portnum, remote_portnum)
 
-        self.speed_wheels = [0, 0, 0, 0]
+        self.speed_wheels = [0.0, 0.0, 0.0, 0.0]
 
-        self.speed = [0, 0, 0]
-        self.position = [0, 0]
+        # ROS message setters require real Python floats, not integer zeroes.
+        # These values are used before the first controller telemetry packet.
+        self.speed = [0.0, 0.0, 0.0]
+        self.position = [0.0, 0.0]
         self.safety_inhibited = False
 
         self.pkt_header = bytes([0xFA])

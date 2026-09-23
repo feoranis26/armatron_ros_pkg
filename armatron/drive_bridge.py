@@ -178,7 +178,7 @@ class ArmatronDrive(Node):
         odom.child_frame_id = self.base_frame_id
         odom.twist.twist.linear.x = self.odom_speed[0]
         odom.twist.twist.linear.y = self.odom_speed[1]
-        odom.twist.twist.angular.z = self.driver.speed[2]
+        odom.twist.twist.angular.z = float(self.driver.speed[2] or 0.0)
         self.odom_publisher.publish(odom)
 
     def on_safety_stop(self, request, response):
