@@ -43,19 +43,19 @@ def generate_launch_description():
             'controller_server.ros__parameters.FollowPath.max_vel_y': PythonExpression(
                 ["'0.075' if '", holonomic, "'.lower() == 'true' else '0.0'"]
             ),
-            'velocity_smoother.ros__parameters.max_velocity': PythonExpression(
-                ["'[2.0, 0.5, 3.0]' if '", holonomic,
-                 "'.lower() == 'true' else '[2.0, 0.0, 3.0]'"]
+            # Humble RewrittenYaml addresses array elements, not whole arrays.
+            'velocity_smoother.ros__parameters.max_velocity.1': PythonExpression(
+                ["'0.5' if '", holonomic, "'.lower() == 'true' else '0.0'"]
             ),
-            'velocity_smoother.ros__parameters.min_velocity': PythonExpression(
-                ["'[-2.0, -0.5, -3.0]' if '", holonomic,
-                 "'.lower() == 'true' else '[-2.0, 0.0, -3.0]'"]
+            'velocity_smoother.ros__parameters.min_velocity.1': PythonExpression(
+                ["'-0.5' if '", holonomic, "'.lower() == 'true' else '0.0'"]
             ),
             'slam_toolbox.ros__parameters.mode': state['mode'],
             'slam_toolbox.ros__parameters.map_file_name': (
                 str(map_file) if map_file.with_suffix('.posegraph').exists() else ''
             ),
-            'slam_toolbox.ros__parameters.map_start_pose': str(map_start_pose),
+            **{f'slam_toolbox.ros__parameters.map_start_pose.{i}': str(float(value))
+               for i, value in enumerate(map_start_pose)},
             'bt_navigator.ros__parameters.default_nav_to_pose_bt_xml': PathJoinSubstitution([
                 FindPackageShare('armatron'), 'behavior_trees', 'navigate_to_pose_no_backup.xml'
             ]),

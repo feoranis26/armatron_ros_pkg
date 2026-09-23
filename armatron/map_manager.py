@@ -50,7 +50,13 @@ def set_selection(name, mode, root):
     directory = profile_dir(name, root)
     if not directory.is_dir():
         raise RuntimeError(f"No such ARMATRON profile: {name}")
-    save_state({"active_profile": name, "mode": mode}, root)
+    state = load_state(root)
+    # Preserve the restart hint when changing mode/reselecting this map, but
+    # never transfer coordinates from a different map.
+    if state['active_profile'] != name:
+        state = {'active_profile': name}
+    state['mode'] = mode
+    save_state(state, root)
     print(f"Active profile: {name} ({mode})")
 
 

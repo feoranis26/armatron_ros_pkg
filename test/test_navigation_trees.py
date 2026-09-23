@@ -13,7 +13,7 @@ class NavigationTreesTest(unittest.TestCase):
         launch = ast.parse((root / 'launch/navigation.launch.py').read_text())
         rewrites = next(n.value for n in ast.walk(launch)
                         if isinstance(n, ast.keyword) and n.arg == 'param_rewrites')
-        params = dict(zip((k.value for k in rewrites.keys), rewrites.values))
+        params = {k.value: v for k, v in zip(rewrites.keys, rewrites.values) if k is not None}
         navigator = yaml.safe_load((root / 'config/nav2/navigation.yaml').read_text())[
             'bt_navigator']['ros__parameters']
         plugins = navigator['plugin_lib_names']
