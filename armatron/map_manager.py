@@ -28,7 +28,7 @@ def command_list(args):
 
 def command_status(args):
     state = load_state(args.root)
-    if args.json:
+    if getattr(args, 'json', False):
         print(json.dumps(state))
         return
     active = state["active_profile"] or "none"
@@ -60,14 +60,14 @@ def command_select(args):
 def command_set_mode(args):
     state = load_state(args.root)
     if not state["active_profile"]:
-        raise RuntimeError("No active ARMATRON map profile. Run: armatron-map select <profile>")
+        raise RuntimeError("No active ARMATRON map profile. Run: ros2 run armatron armatron-map select <profile>")
     set_selection(state["active_profile"], args.mode, args.root)
 
 
 def command_save(args):
     state = load_state(args.root)
     if not state["active_profile"]:
-        raise RuntimeError("No active ARMATRON map profile. Run: armatron-map select <profile>")
+        raise RuntimeError("No active ARMATRON map profile. Run: ros2 run armatron armatron-map select <profile>")
     if state["mode"] != "mapping":
         print("Localization mode: map save is intentionally a no-op.")
         return

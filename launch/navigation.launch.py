@@ -21,7 +21,7 @@ def generate_launch_description():
     active_profile = state['active_profile']
     if not active_profile:
         raise RuntimeError(
-            'No active ARMATRON map profile. Run: armatron-map select <profile>')
+            'No active ARMATRON map profile. Run: ros2 run armatron armatron-map select <profile>')
     selected_profile = profile_dir(active_profile)
     map_file = selected_profile / 'current' / 'map'
     last_pose = state.get('last_pose')

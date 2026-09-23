@@ -142,11 +142,11 @@ Navigation requires an explicit map profile. Runtime state defaults to
 `ARMATRON_STATE_DIR` for developer testing:
 
 ```text
-armatron-map new primary
-armatron-map select primary --mode mapping
+ros2 run armatron armatron-map new primary
+ros2 run armatron armatron-map select primary --mode mapping
 # drive and map, then stop navigation cleanly to serialize a revision
-armatron-map set-mode localization
-armatron-map status
+ros2 run armatron armatron-map set-mode localization
+ros2 run armatron armatron-map status
 ```
 
 Mapping saves are staged and retain the prior revision. Localization mode never
