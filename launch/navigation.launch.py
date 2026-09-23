@@ -72,11 +72,6 @@ def generate_launch_description():
                 FindPackageShare('armatron'), 'maps', 'ai_room.map.yaml'
             ]),
         ),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(PathJoinSubstitution([
-                FindPackageShare('armatron'), 'launch', 'odometry.launch.py'
-            ])),
-        ),
         Node(
             package='armatron',
             executable='pose_persistence',

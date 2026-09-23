@@ -42,4 +42,16 @@ def generate_launch_description():
             executable="scan_filter",
             name="scan_filter"
         ),
+
+        # Local sensor odometry must remain available even when no map profile
+        # is selected and the navigation service intentionally refuses to run.
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource([
+                PathJoinSubstitution([
+                    FindPackageShare('armatron'),
+                    'launch',
+                    'odometry.launch.py'
+                ])
+            ])
+        ),
     ])
