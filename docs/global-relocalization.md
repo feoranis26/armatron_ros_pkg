@@ -100,3 +100,11 @@ Preflight detects any observed map->odom transform; during the owned session the
 command checks for multiple AMCL/slam_toolbox nodes and waits for AMCL discovery
 to disappear before starting SLAM. An unrelated, differently named TF publisher
 started after preflight cannot be identified by this check.
+
+Handoff validation permits transient pose/TF disagreement within its 30-second
+verification deadline. Each disagreement clears the accumulated passing samples;
+three distinct matching updates spanning one second are still required. This
+allows SLAM's asynchronously published, forward-stamped TF to settle after seeding.
+The terminal and status log include accepted/observed poses and metric errors;
+a persistent mismatch fails without saving the recovered pose. Tolerances are
+unchanged.

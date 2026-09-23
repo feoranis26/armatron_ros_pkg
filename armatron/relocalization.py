@@ -148,7 +148,7 @@ def run(args):
             if predicate():
                 return
             if time.monotonic() >= deadline:
-                raise RuntimeError(reason)
+                raise RuntimeError(reason() if callable(reason) else reason)
         raise RuntimeError('ROS shutdown')
 
     def call(kind, name, request):
@@ -310,6 +310,22 @@ def run(args):
         initial.publish(accepted)
         seed_stamp = accepted.header.stamp.sec+accepted.header.stamp.nanosec*1e-9
         verified = []
+        diagnostic = ['No post-seed SLAM pose received']
+        last_diagnostic_at = [-math.inf]
+        def mismatch(label, actual):
+            distance = math.hypot(actual[0]-target[0], actual[1]-target[1])
+            angle = abs(math.atan2(math.sin(actual[2]-target[2]), math.cos(actual[2]-target[2])))
+            detail = (f'{label}: accepted={tuple(round(v, 3) for v in target)}, '
+                      f'observed={tuple(round(v, 3) for v in actual)}, '
+                      f'error={distance:.3f} m / {angle:.3f} rad '
+                      f'(limits {args.distance_tolerance:.3f} m / {args.angle_tolerance:.3f} rad)')
+            if detail != diagnostic[0] and time.monotonic()-last_diagnostic_at[0] >= 1.:
+                status('VERIFYING: '+detail)
+                last_diagnostic_at[0] = time.monotonic()
+            diagnostic[0] = detail
+            verified.clear()
+            return False
+
         def takeover():
             msg = values['slam']
             if msg is None:
@@ -318,18 +334,20 @@ def run(args):
             if stamp <= seed_stamp or (verified and stamp <= verified[-1]):
                 return False
             if not nearby(planar_pose(msg), target, args.distance_tolerance, args.angle_tolerance):
-                raise RuntimeError('SLAM localized away from accepted AMCL pose')
+                return mismatch('SLAM pose disagrees', planar_pose(msg))
             try:
                 transform = buffer.lookup_transform('map', 'base_link', Time.from_msg(msg.header.stamp))
-            except TransformException:
+            except TransformException as error:
+                diagnostic[0] = 'Waiting for scan-time TF: '+str(error)
+                verified.clear()
                 return False
             t, q = transform.transform.translation, transform.transform.rotation
             actual = (t.x, t.y, math.atan2(2*(q.w*q.z+q.x*q.y), 1-2*(q.y*q.y+q.z*q.z)))
             if not nearby(actual, target, args.distance_tolerance, args.angle_tolerance):
-                raise RuntimeError('SLAM TF disagrees with accepted AMCL pose')
+                return mismatch('SLAM scan-time TF disagrees', actual)
             verified.append(stamp)
             return len(verified) >= 3 and verified[-1]-verified[0] >= 1.
-        wait(takeover, 30., 'SLAM takeover not verified; recovered pose not saved', True)
+        wait(takeover, 30., lambda: 'SLAM takeover not verified; recovered pose not saved. '+diagnostic[0], True)
         current = load_state(args.root)
         if (current['active_profile'] != state['active_profile'] or current['mode'] != state['mode'] or
                 original_revision != [(revision/name).stat().st_mtime_ns for name in ('map.posegraph', 'map.data', 'grid/map.yaml')]):

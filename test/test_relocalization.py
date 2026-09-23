@@ -46,7 +46,7 @@ class RelocalizationTest(unittest.TestCase):
         self.assertEqual(args.func.__name__, 'command_relocalize')
 
 class OrchestrationTest(unittest.TestCase):
-    def exercise(self, bad_slam=False, competing=False, existing_tf=False):
+    def exercise(self, bad_slam=False, competing=False, existing_tf=False, transient_tf=False, bad_tf=False):
         import tempfile
         from pathlib import Path
         from unittest.mock import patch
@@ -101,11 +101,14 @@ class OrchestrationTest(unittest.TestCase):
         class Buffer:
             def clear(self): events.append('clear_tf')
             def lookup_transform(self, *args):
-                return NS(transform=NS(translation=NS(x=0., y=0.), rotation=NS(x=0., y=0., z=0., w=1.)))
+                slam_start = next(c.started for c in children if c.executable == 'localization_slam_toolbox_node')
+                wrong = bad_tf or (transient_tf and clock[0]-slam_start < 1.5)
+                return NS(transform=NS(translation=NS(x=4. if wrong else 0., y=0.), rotation=NS(x=0., y=0., z=0., w=1.)))
         class Child:
             def __init__(self, command, **kwargs):
                 self.pid = len(children)+1000
                 self.active = True
+                self.started = clock[0]
                 self.executable = command[3]
                 children.append(self)
                 events.append('start:'+self.executable)
@@ -162,7 +165,7 @@ class OrchestrationTest(unittest.TestCase):
             with patch.dict(sys.modules, modules), patch.object(recovery, 'os', NS(name='posix', killpg=killpg)), \
                  patch.object(recovery.time, 'monotonic', side_effect=lambda: clock[0]), \
                  patch.object(recovery.subprocess, 'Popen', side_effect=Child):
-                if bad_slam or competing or existing_tf:
+                if bad_slam or competing or existing_tf or bad_tf:
                     with self.assertRaises(RuntimeError): recovery.run(args)
                     self.assertEqual(load_state(root)['mode'], 'mapping')
                     self.assertIsNone(load_state(root)['last_pose'])
@@ -187,3 +190,9 @@ class OrchestrationTest(unittest.TestCase):
     def test_existing_map_tf_refuses_with_humble_single_argument_callback(self):
         events = self.exercise(existing_tf=True)
         self.assertFalse(any(e.startswith('start:') for e in events))
+
+    def test_startup_tf_disagreement_can_settle_before_deadline(self):
+        self.exercise(transient_tf=True)
+
+    def test_persistent_tf_disagreement_never_saves_pose(self):
+        self.exercise(bad_tf=True)
