@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail
+# ROS setup scripts read optional variables that may be unset.
+set +u
 
 : "${ARMATRON_WORKSPACE:?ARMATRON_WORKSPACE must name the colcon workspace}"
 source /opt/ros/humble/setup.bash
 source "${ARMATRON_WORKSPACE}/install/setup.bash"
+set -u
 exec "$@"
