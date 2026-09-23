@@ -1,0 +1,16 @@
+[Unit]
+Description=ARMATRON BNO055 gyro publisher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Environment=ARMATRON_WORKSPACE=/home/feoranis/dev_ws
+ExecStart=/home/feoranis/dev_ws/install/armatron/lib/armatron/run-armatron ros2 run armatron gyro_pub
+KillSignal=SIGINT
+TimeoutStopSec=15
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

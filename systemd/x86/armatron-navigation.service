@@ -1,0 +1,16 @@
+[Unit]
+Description=ARMATRON SLAM and Nav2
+After=armatron-hardware.service armatron-drive-bridge.service
+Requires=armatron-hardware.service armatron-drive-bridge.service
+
+[Service]
+Type=simple
+User=feoranis
+Environment=ARMATRON_WORKSPACE=/home/feoranis/dev_ws
+ExecStart=/home/feoranis/dev_ws/install/armatron/lib/armatron/run-armatron ros2 launch armatron navigation.launch.py slam:=true
+KillSignal=SIGINT
+TimeoutStopSec=15
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

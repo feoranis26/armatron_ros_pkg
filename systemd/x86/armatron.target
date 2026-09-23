@@ -1,0 +1,7 @@
+[Unit]
+Description=ARMATRON x86 runtime
+Wants=armatron-hardware.service armatron-drive-bridge.service armatron-navigation.service armatron-teleop.service
+After=network-online.target
+
+[Install]
+WantedBy=multi-user.target

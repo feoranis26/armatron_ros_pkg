@@ -1,7 +1,3 @@
-import threading
-import time
-import socket
-import pygame
 from .udp_device import UDPDevice
 
 #ROTS_PER_METER = 2   #
@@ -60,15 +56,3 @@ class WheelDriver(UDPDevice):
 
     def update(self):
         pass
-
-if __name__ == "__main__":
-    pygame.init()
-    pygame.joystick.init()
-    js = pygame.joystick.Joystick(0)
-
-    js.init()
-    driver = WheelDriver("192.168.1.34", 11753)
-    while True:
-        pygame.event.pump()
-        driver.drive(js.get_axis(0), js.get_axis(1), 0)
-        time.sleep(0.1)

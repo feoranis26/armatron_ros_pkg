@@ -1,0 +1,16 @@
+[Unit]
+Description=ARMATRON sensor and robot-description bringup
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=feoranis
+Environment=ARMATRON_WORKSPACE=/home/feoranis/dev_ws
+ExecStart=/home/feoranis/dev_ws/install/armatron/lib/armatron/run-armatron ros2 launch armatron hardware.launch.py
+KillSignal=SIGINT
+TimeoutStopSec=15
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

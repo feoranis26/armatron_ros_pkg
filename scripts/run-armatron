@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${ARMATRON_WORKSPACE:?ARMATRON_WORKSPACE must name the colcon workspace}"
+source /opt/ros/humble/setup.bash
+source "${ARMATRON_WORKSPACE}/install/setup.bash"
+exec "$@"

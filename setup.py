@@ -13,8 +13,10 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob(os.path.join('launch', '*launch.[pxy][yma]*'))),
-        (os.path.join('share', package_name, 'params'), glob(os.path.join('params', '*yaml'))),
-        (os.path.join('share', package_name, 'maps'), glob(os.path.join('maps', '*')))
+        (os.path.join('share', package_name, 'config', 'nav2'), glob(os.path.join('config', 'nav2', '*yaml'))),
+        (os.path.join('share', package_name, 'maps'), glob(os.path.join('maps', '*'))),
+        (os.path.join('share', package_name, 'rviz'), glob(os.path.join('rviz', '*'))),
+        (os.path.join('lib', package_name), ['scripts/run-armatron']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -25,15 +27,10 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'drive = armatron.node:main',
-            'drive_2wd = armatron.node_udp_2wd:main',
-            'drive_serial = armatron.node_i2c:main',
-            'drive_tcp = armatron.node_i2c:main',
-            'drive_udp_i2c = armatron.node_i2c:main',
-            'drive_udp = armatron.node_i2c:main',
-            'scan_trimmer = armatron.scan_trimmer:main',
-            'goto_pose = armatron.goto_pose:main',
-            'gyro_pub = armatron.gyro_pub:main'
+            'drive = armatron.drive_bridge:main',
+            'scan_filter = armatron.scan_filter:main',
+            'gyro_pub = armatron.gyro_pub:main',
+            'armatron-posegraph = armatron.posegraph:main',
         ],
     },
 )

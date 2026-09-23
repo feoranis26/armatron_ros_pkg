@@ -35,6 +35,7 @@ class GyroPublisher():
 
         self.remote = None
         self.portnum = 0
+        self.fatal_error = None
 
         self.send_thr.start()
         self.recv_thr.start()
@@ -65,7 +66,8 @@ class GyroPublisher():
                     time.sleep(0.1)
                     continue
 
-                raise
+                self.fatal_error = e
+                return
 
     def send(self, data):
         send_data = bytes(data, "utf-8")
@@ -147,9 +149,10 @@ def get_quaternion_from_euler(roll, pitch, yaw):
 def main(args=None):
     pub = GyroPublisher("0.0.0.0", 11755)
 
-    while True:
-        time.sleep(10)
-    #    pub.print_status()
+    while pub.fatal_error is None:
+        time.sleep(0.1)
+
+    raise RuntimeError(f'gyro publisher failed: {pub.fatal_error}')
 
 if __name__ == '__main__':
     main()

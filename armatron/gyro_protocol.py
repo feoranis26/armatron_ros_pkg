@@ -1,5 +1,3 @@
-import time
-
 from .udp_device import UDPDevice
 
 
@@ -27,10 +25,3 @@ class UDPGyro(UDPDevice):
 
     def update(self):
         pass
-
-if __name__ == "__main__":
-    gyro = UDPGyro("10.8.3.56", 11755, 11757)
-
-    while True:
-        print(gyro.angle)
-        time.sleep(1)

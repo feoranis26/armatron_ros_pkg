@@ -1,0 +1,17 @@
+[Unit]
+Description=ARMATRON joystick teleoperation
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=feoranis
+Environment=ARMATRON_WORKSPACE=/home/feoranis/dev_ws
+Environment=SDL_VIDEODRIVER=dummy
+ExecStart=/home/feoranis/dev_ws/install/armatron/lib/armatron/run-armatron ros2 launch joy_teleop joy_teleop_ubuntu.launch.py
+KillSignal=SIGINT
+TimeoutStopSec=15
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

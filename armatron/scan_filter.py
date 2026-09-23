@@ -1,6 +1,3 @@
-import math
-import socket, threading, time
-
 import rclpy
 from rclpy.node import Node
 
@@ -8,7 +5,7 @@ from sensor_msgs.msg import LaserScan
 
 class ScanTrimmer(Node):
     def __init__(self):
-        super().__init__("scan_trimmer")
+        super().__init__("scan_filter")
 
         self.raw_scan_topic = self.declare_parameter(
           'raw_scan_topic', 'scan_raw').get_parameter_value().string_value
@@ -54,11 +51,11 @@ def main(args=None):
 
     trim_node = ScanTrimmer()
 
-    rclpy.spin(trim_node)
-
-    trim_node.stop()
-    trim_node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(trim_node)
+    finally:
+        trim_node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()
