@@ -70,6 +70,16 @@ class MapResumeTest(unittest.TestCase):
         changes = eval(compile(ast.Expression(expression), '<restart pose>', 'eval'),
                        {'map_start_pose': pose})
         params = yaml.safe_load((root / 'config/nav2/navigation.yaml').read_text())
+        # Load the production path updater without requiring a ROS installation.
+        stub = ModuleType('nav2_common.launch')
+        stub.RewrittenYaml = object
+        spec = importlib.util.spec_from_file_location('armatron._launch_params_test',
+            root / 'armatron/launch_parameters.py')
+        module = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, {'nav2_common': ModuleType('nav2_common'),
+                                     'nav2_common.launch': stub}):
+            spec.loader.exec_module(module)
+        updater = module.RewrittenYaml()
         # Humble pathify expands lists to .0/.1/.2. Whole-array rewrites
         # are ignored. Verify these exact paths exist and preserve double type.
         for path, value in changes.items():
@@ -79,9 +89,15 @@ class MapResumeTest(unittest.TestCase):
                 target = target[key]
             index = int(keys[-1])
             self.assertIsInstance(target[index], float)
-            target[index] = float(value)
+            updater.updateYamlPathVals(params, keys, float(value))
         self.assertEqual(params['slam_toolbox']['ros__parameters']['map_start_pose'], pose)
         explicit = {k.value for k in rewrites.keys if k is not None}
         for name in ('max_velocity', 'min_velocity'):
             self.assertIn(f'velocity_smoother.ros__parameters.{name}.1', explicit)
             self.assertNotIn(f'velocity_smoother.ros__parameters.{name}', explicit)
+            updater.updateYamlPathVals(params,
+                f'velocity_smoother.ros__parameters.{name}.1'.split('.'), 0.0)
+            self.assertEqual(params['velocity_smoother']['ros__parameters'][name][1], 0.0)
+        updater.updateYamlPathVals(params,
+            ['slam_toolbox', 'ros__parameters', 'map_file_name'], '/tmp/map')
+        self.assertEqual(params['slam_toolbox']['ros__parameters']['map_file_name'], '/tmp/map')
