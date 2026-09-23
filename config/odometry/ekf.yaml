@@ -10,8 +10,8 @@ ekf_filter_node:
     world_frame: odom
 
     odom0: /odom/drive_validated
-    # Open-loop step positions are deliberately excluded.  The controller's
-    # body-frame x/y velocity is used; wheel-derived rotation is excluded.
+    # Optional input, silent by default (monitor use_drive_fusion: false).
+    # If enabled, only body-frame x/y velocity is used, never wheel rotation.
     odom0_config: [false, false, false,
                    false, false, false,
                    true, true, false,

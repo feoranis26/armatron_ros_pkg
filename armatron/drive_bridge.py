@@ -71,10 +71,8 @@ class ArmatronDrive(Node):
         self.last_safety_send = float('-inf')
         self.last_safety_sample = None
         self.last_speed_sample = None
-        self.monitor_seen_at = time.monotonic()
         self.safety_publisher = self.create_publisher(Bool, '/drive/safety_inhibited', 10)
         self.create_subscription(Bool, '/drive/inhibit_request', self.on_inhibit_request, 10)
-        self.create_subscription(Bool, '/drive/odometry_valid', self.on_monitor_heartbeat, 10)
         self.safety_stop_service = self.create_service(
             Empty, "/drive/safety_stop", self.on_safety_stop)
         self.safety_reset_service = self.create_service(
@@ -118,10 +116,6 @@ class ArmatronDrive(Node):
 
     def tick(self):
         now = time.monotonic()
-        if now - self.monitor_seen_at > 1.0:
-            if self.inhibit_requested is not True:
-                self.get_logger().error('Motion monitor heartbeat lost; inhibiting propulsion')
-            self.inhibit_requested = True
         safety = self.driver.safety_sample
         acknowledged = safety is not None and now - safety[1] < 0.5
         if acknowledged and safety[1] != self.last_safety_sample:
@@ -260,9 +254,6 @@ class ArmatronDrive(Node):
         self.inhibit_requested = message.data
         if message.data:
             self.set_speed(Twist())
-
-    def on_monitor_heartbeat(self, message):
-        self.monitor_seen_at = time.monotonic()
 
     def on_vel_msg_received(self, msg):
         self.get_logger().debug(f"Received spd msg l x: {msg.linear.x} y: {msg.linear.y} z: {msg.linear.z} a x: {msg.angular.x} y: {msg.angular.y} z: {msg.angular.z}")

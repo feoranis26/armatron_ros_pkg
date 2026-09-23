@@ -55,67 +55,53 @@ def odom(t, x, vx):
 
 
 class MonitorTest(unittest.TestCase):
-    def test_stationary_noise_allows_rearm_and_keeps_gate_open(self):
-        module = load_monitor()
-        now = [0.]
-        with patch('time.monotonic', side_effect=lambda: now[0]):
-            m = module.MotionConsistencyMonitor()
-            ack = True
-            for i in range(241):
-                t = now[0] = i*0.05
-                m.on_ack(Message(data=ack))
-                m.on_gyro(Message(data='OK'))
-                m.on_drive(odom(t, 0., 0.))
-                if i % 2 == 0:
-                    m.on_rf(odom(t, 0.03*math.sin(3*t), 0.))
-                m.evaluate()
-                if m.request_pub.publish.called:
-                    ack = m.request_pub.publish.call_args.args[0].data
-                    m.request_pub.publish.reset_mock()
-                if t > 5.:
-                    self.assertFalse(ack)
-                    self.assertTrue(m.gate)
+    def feed(self, m, t, speed, x, ack=False):
+        m.on_ack(Message(data=ack))
+        m.on_gyro(Message(data='OK'))
+        m.on_drive(odom(t, 0., speed))
+        m.on_rf(odom(t, x, 0.))
+        m.evaluate()
 
-    def test_gate_fault_ack_and_rearm(self):
+    def test_default_disagreement_and_sensor_loss_are_diagnostic_only(self):
         module = load_monitor()
         now = [0.]
         with patch('time.monotonic', side_effect=lambda: now[0]):
             m = module.MotionConsistencyMonitor()
-            ack = False
+            for i in range(101):
+                now[0] = i*0.1
+                self.feed(m, now[0], 0.4, 0.)
+            self.assertEqual(m.last_status, 'DISAGREEMENT')
+            self.assertFalse(m.gate)
+            m.drive_pub.publish.assert_not_called()
+            self.assertGreater(m.rf_pub.publish.call_count, 0)
+            self.assertFalse(hasattr(m, 'request_pub'))
+            now[0] = 12.
+            m.evaluate()
+            self.assertEqual(m.last_status, 'UNAVAILABLE')
+            # An existing explicit stop is observed, never automatically reset.
+            self.feed(m, now[0], 0., 0., ack=True)
+            self.assertTrue(m.ack)
+            self.assertFalse(hasattr(m, 'recovery'))
+
+    def test_optional_wheel_fusion_waits_for_sustained_agreement(self):
+        module = load_monitor()
+        now = [0.]
+        with patch('time.monotonic', side_effect=lambda: now[0]):
+            m = module.MotionConsistencyMonitor()
+            m.use_drive = True
             x = 0.
-            state_history = []
-            for i in range(321):
-                t = now[0] = i*0.05
-                # Warm up, drive normally, stall, keep commanding into fault,
-                # then let autonomy cease commanding and re-arm.
-                command = 0.4 if 5 <= t < 11 else 0.
-                vx = command if not ack else 0.
-                if 5 <= t < 7: x += vx*0.05
-                m.on_command(NS(linear=NS(x=command,y=0.), angular=NS(z=0.)))
-                m.on_ack(Message(data=ack))
-                m.on_gyro(Message(data='OK'))
-                m.on_drive(odom(t, x, vx))
-                if i % 2 == 0: m.on_rf(odom(t, x, 0.))
-                m.evaluate()
-                if m.request_pub.publish.called:
-                    ack = m.request_pub.publish.call_args.args[0].data
-                    m.request_pub.publish.reset_mock()
-                state_history.append((t,m.recovery.state,m.gate))
-                if 9 <= t < 11:
+            for i in range(161):
+                t = now[0] = i*0.1
+                # Healthy motion, then disagreement, then healthy motion again.
+                if t < 5 or t >= 8:
+                    x += 0.04
+                self.feed(m, t, 0.4, x)
+                if 4.5 < t < 5:
+                    self.assertTrue(m.gate)
+                if 6 < t < 11:
                     self.assertFalse(m.gate)
-                    self.assertTrue(ack)
-            self.assertTrue(any(5<t<7 and gate for t,_,gate in state_history))
-            self.assertTrue(any(state=='STALLED' for _,state,_ in state_history))
-            self.assertEqual(m.recovery.state, 'NORMAL')
-            self.assertFalse(ack)
             self.assertTrue(m.gate)
             self.assertGreater(m.drive_pub.publish.call_count, 0)
-            self.assertGreater(m.rf_pub.publish.call_args.args[0].pose.covariance[0], 0)
-            # Loss of RF2O closes the gate and requests a stop.
-            now[0] = 20.
+            now[0] = 17.
             m.evaluate()
             self.assertFalse(m.gate)
-            self.assertTrue(m.request_pub.publish.call_args.args[0].data)
-            old_rf_time = m.rf_at
-            m.on_rf(odom(10., 0., 0.))
-            self.assertEqual(m.rf_at, old_rf_time)

@@ -1,14 +1,14 @@
 motion_consistency_monitor:
   ros__parameters:
-    auto_rearm: true
-    quiet_seconds: 3.0
-    use_drive_fusion: true
+    # RF2O + gyro is the default; raw step estimates are diagnostic only.
+    use_drive_fusion: false
+    agreement_seconds: 3.0  # sustained agreement before optional wheel fusion returns
     distance_floor: 0.015
     relative_error: 0.4
     angle_floor: 0.10
     timing_tolerance: 0.2
     rotation_translation_tolerance: 0.125
-    # Idle scan-matching noise allowance, also used for the quiet re-arm dwell.
+    # Idle scan-matching noise allowance (diagnostics/optional fusion only).
     # Driving comparisons retain the tighter distance/angle floors above.
     stationary_distance: 0.08  # metres per comparison window
     stationary_angle: 0.25   # radians per comparison window

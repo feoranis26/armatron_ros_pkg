@@ -79,8 +79,7 @@ class MotionWindow:
         a, b = interpolate(self.rf, start, True), interpolate(self.rf, end, True)
         mx, my, myaw = b[0]-a[0], b[1]-a[1], angle(b[2]-a[2])
         residual = math.hypot(dx-mx, dy-my)
-        # Carrying also closes the wheel gate. Inhibit is harmless when commands
-        # are zero, and re-arming waits until the robot has been put down.
+        # Carrying also closes the optional wheel-fusion gate.
         # Allow for telemetry/scan latency and the observed uncertainty of
         # translation during a turn (bounded by the lidar's 0.125 m offset).
         translation_limit = (self.distance_floor + self.relative_error*max(distance, math.hypot(mx,my)) +
@@ -98,50 +97,3 @@ class MotionWindow:
                    abs(angle(dyaw-myaw)) > self.stationary_angle)
         return {'bad': bad, 'end': end, 'residual': residual,
                 'measured_distance': math.hypot(mx,my), 'measured_angle': abs(myaw)}
-
-
-class Recovery:
-    """Inhibit acknowledgement and quiet-dwell re-arm policy."""
-    def __init__(self, auto_rearm=True, quiet_seconds=3.0):
-        self.auto_rearm = auto_rearm
-        self.quiet_seconds = quiet_seconds
-        self.state = 'WARMUP'
-        self.quiet_since = None
-        self.manual_reset = False
-
-    def step(self, now, healthy, fault, quiet, ack):
-        if fault or not healthy:
-            self.state = 'STOPPING'
-            self.quiet_since = None
-            return True
-        if self.state in ('WARMUP', 'NORMAL'):
-            if ack is True:
-                self.state = 'STALLED'
-            else:
-                self.state = 'NORMAL'
-                return None
-        if self.state == 'RESETTING':
-            if not quiet:
-                self.state = 'STOPPING'
-                self.quiet_since = None
-                return True
-            if ack is False:
-                self.state = 'NORMAL'
-                self.manual_reset = False
-                self.quiet_since = None
-                return None
-            return False
-        if ack is not True:
-            self.state = 'STOPPING'
-            self.quiet_since = None
-            return True
-        self.state = 'STALLED'
-        if quiet:
-            if self.quiet_since is None:
-                self.quiet_since = now
-            if (self.auto_rearm or self.manual_reset) and now-self.quiet_since >= self.quiet_seconds:
-                self.state = 'RESETTING'
-                return False
-        else:
-            self.quiet_since = None
-        return True

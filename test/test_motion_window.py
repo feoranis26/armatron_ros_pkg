@@ -1,7 +1,7 @@
 import math
 import unittest
 
-from armatron.motion_window import MotionWindow, Recovery
+from armatron.motion_window import MotionWindow
 
 
 class WindowTest(unittest.TestCase):
@@ -44,38 +44,3 @@ class WindowTest(unittest.TestCase):
         self.assertFalse(w.add('rf', 4., (float('nan'),0.,0.)))
         w.rf = type(w.rf)(r for r in w.rf if r[0] < 2 or r[0] > 2.7)
         self.assertIsNone(w.compare(2.5))
-
-
-class RecoveryTest(unittest.TestCase):
-    def test_acknowledged_stop_and_automatic_rearm(self):
-        r = Recovery()
-        self.assertTrue(r.step(0, True, True, False, False))
-        self.assertEqual(r.state, 'STOPPING')
-        self.assertTrue(r.step(1, True, False, True, None))
-        self.assertTrue(r.step(2, True, False, True, True))
-        self.assertEqual(r.state, 'STALLED')
-        self.assertTrue(r.step(4, True, False, True, True))
-        self.assertFalse(r.step(5, True, False, True, True))
-        self.assertEqual(r.state, 'RESETTING')
-        self.assertFalse(r.step(6, True, False, True, True))
-        self.assertIsNone(r.step(7, True, False, True, False))
-        self.assertEqual(r.state, 'NORMAL')
-
-    def test_no_rearm_into_command_or_stale_sensor(self):
-        r = Recovery()
-        r.step(0, True, True, False, False)
-        for t in range(1,10):
-            self.assertTrue(r.step(t, True, False, False, True))
-        r.manual_reset = True
-        self.assertTrue(r.step(10, False, False, True, True))
-        self.assertNotEqual(r.state, 'NORMAL')
-
-    def test_manual_mode_and_abort_reset(self):
-        r = Recovery(auto_rearm=False)
-        r.step(0, True, True, False, False)
-        r.step(1, True, False, True, True)
-        self.assertTrue(r.step(10, True, False, True, True))
-        r.manual_reset = True
-        self.assertFalse(r.step(11, True, False, True, True))
-        self.assertTrue(r.step(12, True, False, False, True))
-        self.assertEqual(r.state, 'STOPPING')

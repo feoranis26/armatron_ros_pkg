@@ -48,7 +48,7 @@ ros2 launch armatron visualization.launch.py
 
 ## Fused odometry and map profiles
 
-The EKF uses drive x/y velocity, RF2O differential planar pose, and BNO heading
+The EKF defaults to RF2O differential planar pose and BNO heading
 on `/imu/gyro`. Wheel-derived yaw rate is excluded. The x86 bridge adapts the
 existing UDP Euler heading into a yaw-only IMU message; angular velocity and
 acceleration are marked unavailable. Heading is fused relative to the first
@@ -72,73 +72,53 @@ on the floor and run `bash ./src/armatron/systemd/reset-odometry.sh` on the x86
 (adjust the checkout directory name if needed). This stops navigation and
 teleop, then restarts the drive bridge and hardware group, including RF2O and
 the EKF. Navigation and teleop stay stopped; explicitly start teleop to resume
-manual testing. The script does not reset the Pi latch; the monitor may re-arm
-it after the normal healthy stationary dwell. Raw drive heading still uses
+manual testing. The script does not reset the Pi latch; explicitly reset it with `/drive/safety_reset` if needed. Raw drive heading still uses
 the gyro and does not share RF2O's zero starting heading. Restart localization
 and provide an initial pose as needed before resuming navigation after a reset.
 
 `hardware.launch.py` starts RF2O as `/odom/rf2o` with TF disabled, and
 `robot_localization` as the sole `odom -> base_link` authority. The stepper
 estimate remains available at `/odom/drive_raw` for comparison and for the
-motion-consistency monitor. The monitor supplies `/odom/drive_validated` to
-the EKF only while measurements are fresh and consistent. `/odom/rf2o_fusion`
-supplies the independent lidar measurement with explicit covariance; RF2O and
-gyro remain available during a drive fault. Raw topics remain diagnostic data.
+motion-consistency monitor. `/odom/rf2o_fusion` supplies lidar measurements with
+explicit covariance. Wheel translation is disabled by default; wheel rotation
+is never fused. Raw topics remain available for diagnostics.
 
 The monitor compares integrated body velocities against RF2O displacement over
-matching 0.75 s and 2.5 s windows. Distance/angle noise floors, proportional
-error, timing tolerance, and rotation-offset uncertainty replace the old speed
-cutoff. A suspect window immediately closes the wheel gate; three distinct
-disagreeing scans persisting for at least 0.25 s request a motor inhibit. Sensor
-loss also requests an inhibit. The bridge retries the UDP request until fresh
-Pi telemetry confirms the state, and clamps commands locally while stopped or
-without fresh Pi acknowledgement. Loss of monitor heartbeat also inhibits.
+matching 0.75 s and 2.5 s windows. It reports `CONSISTENT`, `DISAGREEMENT`, or
+`UNAVAILABLE` on `/motion_consistency/status`. Disagreement, missing sensors,
+and loss of the monitor do not inhibit propulsion. A corridor, slipping wheels,
+a stall, carrying, and moving scenery can produce indistinguishable disagreement.
+This monitor does not attempt collision recovery or automatically reset a stop.
+SLAM may correct drift but shares the lidar's geometric limitations.
 
-Status distinguishes `STOPPING` (awaiting acknowledgement), `STALLED`, and
-`RESETTING` (awaiting reset acknowledgement). `/drive/safety_inhibited` now
-reports fresh Pi feedback, not the monitor's requested state. Observe it with
-`/motion_consistency/status` and `/drive/odometry_valid`.
+Settings are in `config/odometry/monitor.yaml`. `use_drive_fusion: false` is the
+default. If explicitly enabled, `/odom/drive_validated` supplies wheel x/y
+velocity only after three seconds of continuous healthy agreement; disagreement
+or stale data immediately closes that fusion gate. `agreement_seconds` controls
+this delay. `/drive/odometry_valid` reports whether wheel fusion is enabled and
+allowed; false is normal in the default configuration and is not a drive stop.
+The stationary comparison allowances remain configurable diagnostic thresholds.
 
-Automatic re-arm is enabled by default: fresh drive/RF2O/gyro data, a confirmed
-Pi latch, negligible measured motion, and zero motion commands must persist for
-three seconds. A reset request is then retried until the Pi confirms release.
-A continuing command into an obstacle prevents release. This does not cancel,
-resubmit, or resume Nav2 goals, nor implement retreat; Nav2 must terminate its
-failed motion attempt before re-arm can complete. Manual re-arm requests use
-the same health and quiet checks:
+Explicit `/drive/safety_stop` and `/drive/safety_reset` services and the
+`/drive/inhibit_request` topic remain available to a separate supervisor.
+`/drive/safety_inhibited` reports fresh Pi feedback. The bridge still clamps
+commands while Pi feedback is stale or the Pi latch is set, retries explicit
+stop/reset requests, and zeros commands after one second without `/cmd_vel`.
+The Pi's independent 500 ms UDP command timeout remains unchanged.
+
+Deploy with the x86 refresh script; no Pi code update is required for this change.
+An old latched stop is intentionally not cleared automatically. With motion
+commands released, clear it once if necessary:
 
 ```text
-ros2 service call /motion_consistency/reset std_srvs/srv/Empty
+ros2 service call /drive/safety_reset std_srvs/srv/Empty '{}'
 ```
 
-Stationary telemetry uses a separate scan-matching noise allowance: 8 cm and
-0.25 rad of disagreement per comparison window. It applies only when drive
-speed stays below 0.005 m/s and yaw rate below 0.01 rad/s throughout the window.
-Moving comparisons retain their tighter thresholds, including slow stalls.
-The quiet re-arm dwell uses the same lidar allowance, so small moving-scene
-errors do not prevent recovery. Larger apparent displacement still triggers
-the carrying/mismatch response; RF2O alone cannot distinguish carrying from
-a sufficiently large moving-scene error. Small or very slow carrying may remain
-below these thresholds. Configure `stationary_distance` and `stationary_angle`
-to change this tradeoff.
-
-Settings are in `config/odometry/monitor.yaml`; restart hardware after changing
-them. `auto_rearm: false` requires the operator request above. For an RF2O+gyro
-baseline, set `use_drive_fusion: false`: raw steps are still recorded and the
-motor monitor stays active, but no wheel input reaches the EKF. Covariances and
-detection tolerances are initial assumptions; finite detection time means some
-pre-fault displacement error remains possible, especially below scan noise.
-Raw drive pose is not corrected retroactively after a stall.
-
-Deploy this change to the Pi `armatron_drive` package first and then the x86
-`armatron` package. With fresh sensors and zero commands, expect automatic
-startup re-arm after the dwell. Test ordinary slow/fast motion first, then a
-controlled low-speed restraint; confirm Pi feedback says inhibited and the
-validated drive topic stops publishing. Release commands and confirm re-arm.
-Record `/odom/drive_validated`, `/odom/rf2o_fusion`, `/imu/gyro`,
-`/drive/safety_inhibited`, `/drive/odometry_valid`, and monitor status alongside
-the raw odometry for validation. The bridge now requires the monitor heartbeat
-for propulsion, including teleop; running only the bridge is insufficient.
+The old `/motion_consistency/reset` service is removed. Verify that disagreement
+changes status without setting the Pi latch, `/odom/rf2o_fusion` keeps publishing,
+and `/odom/drive_validated` stays silent by default. Test explicit stop/reset and
+command timeout separately. RF2O sensor loss is reported but does not stop teleop;
+autonomous navigation must handle localization loss through its own supervision.
 
 Navigation requires an explicit map profile. Runtime state defaults to
 `/var/lib/armatron` under the systemd service and can be redirected with
