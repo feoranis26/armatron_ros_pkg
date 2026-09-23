@@ -29,8 +29,10 @@ class NavigationTreesTest(unittest.TestCase):
             'PipelineSequence': 'nav2_pipeline_sequence_bt_node',
             'RateController': 'nav2_rate_controller_bt_node',
         }
+        # BehaviorTree.CPP 3.8 registers the memory sequence as SequenceStar.
+        # Source: BehaviorTree/BehaviorTree.CPP tag 3.8.6, src/bt_factory.cpp.
         builtins = {'root', 'BehaviorTree', 'ReactiveFallback', 'ReactiveSequence',
-                    'SequenceWithMemory'}
+                    'SequenceStar'}
         for kind in ('to_pose', 'through_poses'):
             # Humble RewrittenYaml silently ignores absent parameter keys.
             key = f'default_nav_{kind}_bt_xml'
@@ -41,7 +43,9 @@ class NavigationTreesTest(unittest.TestCase):
                             if isinstance(n, ast.Constant) and isinstance(n.value, str)
                             and n.value.endswith('.xml'))
             tree = ET.parse(root / 'behavior_trees' / filename)
+            self.assertNotIn('BTCPP_format', tree.getroot().attrib)
             tags = {node.tag for node in tree.iter()}
+            self.assertNotIn('SequenceWithMemory', tags)
             self.assertNotIn('BackUp', tags)
             for tag in tags - builtins:
                 self.assertIn(required[tag], plugins)
