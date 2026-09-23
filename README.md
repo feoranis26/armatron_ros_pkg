@@ -66,8 +66,16 @@ normal localization launch parameters when it needs a different initial pose.
 ## systemd installation
 
 Unit files are source-controlled under `systemd/pi` and `systemd/x86`.
-Review and copy the appropriate files to `/etc/systemd/system/`, then run
-`systemd-analyze verify` before enabling any unit. They intentionally use
+Link the selected host's checked-out units with:
+
+```text
+sudo ./systemd/install.sh pi
+sudo ./systemd/install.sh x86
+```
+
+The linker refuses to replace a regular file, reloads systemd, and does not
+enable or start any unit. Run `systemd-analyze verify` before enabling a target.
+The units intentionally use
 `Restart=no`; a failed process stays failed for diagnosis with `systemctl
 status` and `journalctl -u`.
 
