@@ -48,6 +48,13 @@ ros2 launch armatron visualization.launch.py
 
 ## Fused odometry and map profiles
 
+Gyro transport health is published by the x86 bridge on `/gyro/status`. Missing
+or invalid angle packets for one second produce STALE status and a journal
+error every five seconds; raw pose heading is held at its last value (zero
+before the first reading). The Pi gyro service fails if either worker exits or
+five seconds pass without a valid sensor reading, including before a client
+connects. Its existing `Restart=no` policy leaves failures visible for diagnosis.
+
 For a fresh local odometry session during diagnosis, place the robot stationary
 on the floor and run `bash ./src/armatron/systemd/reset-odometry.sh` on the x86
 (adjust the checkout directory name if needed). This stops navigation and

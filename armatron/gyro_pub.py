@@ -8,17 +8,19 @@ import adafruit_bno055
 import errno
 import time
 
+from .gyro_health import GyroHealth
+
 class GyroPublisher():
     def __init__(self, ip, portnum) -> None:
         self.i2c = board.I2C()
         self.imu = adafruit_bno055.BNO055_I2C(self.i2c)
 
         self.send_thr = threading.Thread(
-            target=self.thread, args=(), daemon=True
+            target=self.thread, args=(), daemon=True, name='gyro-sensor'
         )
 
         self.recv_thr = threading.Thread(
-            target=self.receive_thread, args=(), daemon=True
+            target=self.receive_thread, args=(), daemon=True, name='gyro-udp'
         )
 
         self.pkt_header = bytes([0xFA])
@@ -33,6 +35,7 @@ class GyroPublisher():
         self.remote = None
         self.portnum = 0
         self.fatal_error = None
+        self.health = GyroHealth()
 
         self.send_thr.start()
         self.recv_thr.start()
@@ -43,18 +46,17 @@ class GyroPublisher():
         while True:
             time.sleep(0.025)
 
-            if self.remote is None:
-                continue
-
             try:
                 euler = self.imu.euler
                 read_yaw = euler[0]
 
-                if read_yaw is None:
+                if read_yaw is None or not math.isfinite(read_yaw):
                     continue
 
                 failures = 0
-                self.send(f"angle:{read_yaw};")
+                self.health.last_valid = time.monotonic()
+                if self.remote is not None:
+                    self.send(f"angle:{read_yaw};")
 
             except OSError as e:
                 if e.errno == errno.EREMOTEIO:
@@ -106,7 +108,10 @@ class GyroPublisher():
                     continue
                 data = data.removesuffix(self.pkt_footer)
 
-            data = data.decode("UTF-8")
+            try:
+                data = data.decode("UTF-8")
+            except UnicodeDecodeError:
+                continue
             
             if data == "connect":
                 self.remote = raddr
@@ -148,6 +153,7 @@ def main(args=None):
 
     while pub.fatal_error is None:
         time.sleep(0.1)
+        pub.health.check((pub.send_thr, pub.recv_thr))
 
     raise RuntimeError(f'gyro publisher failed: {pub.fatal_error}')
 

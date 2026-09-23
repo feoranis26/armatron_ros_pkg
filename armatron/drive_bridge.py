@@ -4,7 +4,7 @@ import time
 import rclpy
 from rclpy.node import Node
 
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, String
 from std_srvs.srv import Empty
 from geometry_msgs.msg import Twist, Point, Quaternion
 from nav_msgs.msg import Odometry
@@ -57,6 +57,9 @@ class ArmatronDrive(Node):
         # This is an observation from open-loop step pulses, never the
         # authoritative odom -> base_link transform.
         self.odom_publisher = self.create_publisher(Odometry, "/odom/drive_raw", 10)
+        self.gyro_status_publisher = self.create_publisher(String, '/gyro/status', 10)
+        self.gyro_was_fresh = None
+        self.last_gyro_warning = float('-inf')
         self.safety_stop_service = self.create_service(
             Empty, "/drive/safety_stop", self.on_safety_stop)
         self.safety_reset_service = self.create_service(
@@ -105,7 +108,7 @@ class ArmatronDrive(Node):
         #read_yaw = self.imu.euler[0]
         read_yaw = self.gyro.angle
         if read_yaw is not None:
-            self.heading = -(read_yaw / 180.0) * 3.1415
+            self.heading = -math.radians(read_yaw)
 
         #quat = self.imu.quaternion
         quaternion = Quaternion()
@@ -161,6 +164,18 @@ class ArmatronDrive(Node):
         self.driver.update()
 
     def print_status(self):
+        fresh = self.gyro.angle is not None
+        self.gyro_status_publisher.publish(String(data=(
+            'OK' if fresh else 'STALE: no valid gyro angle within 1 second; raw pose heading held')))
+        now = time.monotonic()
+        if not fresh and now - self.last_gyro_warning >= 5.0:
+            self.get_logger().error(
+                'Gyro data missing/stale. Raw odometry heading is held, not measured. '
+                'Check Pi armatron-gyro.service and UDP 11755/11757.')
+            self.last_gyro_warning = now
+        elif fresh and self.gyro_was_fresh is not True:
+            self.get_logger().info('Valid gyro telemetry received')
+        self.gyro_was_fresh = fresh
         self.get_logger().debug(f"Heading:\t\t {self.heading}")
         self.get_logger().debug(f"Position:\t\t {self.position}")
         self.get_logger().debug(f"Tgt speed:\t\t {self.tgt_speed}")
