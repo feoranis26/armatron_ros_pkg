@@ -8,6 +8,10 @@ motion_consistency_monitor:
     angle_floor: 0.10
     timing_tolerance: 0.2
     rotation_translation_tolerance: 0.125
+    # Idle scan-matching noise allowance, also used for the quiet re-arm dwell.
+    # Driving comparisons retain the tighter distance/angle floors above.
+    stationary_distance: 0.08  # metres per comparison window
+    stationary_angle: 0.25   # radians per comparison window
     # Initial uncertainty assumptions; validate with actual measurements.
     drive_velocity_variance: 0.0025
     rf_position_variance: 0.0004

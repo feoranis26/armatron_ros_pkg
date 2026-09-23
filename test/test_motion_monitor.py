@@ -1,5 +1,6 @@
 """Exercise the real ROS callbacks with in-memory message/publisher stand-ins."""
 import importlib.util
+import math
 from pathlib import Path
 import sys
 import time
@@ -54,6 +55,27 @@ def odom(t, x, vx):
 
 
 class MonitorTest(unittest.TestCase):
+    def test_stationary_noise_allows_rearm_and_keeps_gate_open(self):
+        module = load_monitor()
+        now = [0.]
+        with patch('time.monotonic', side_effect=lambda: now[0]):
+            m = module.MotionConsistencyMonitor()
+            ack = True
+            for i in range(241):
+                t = now[0] = i*0.05
+                m.on_ack(Message(data=ack))
+                m.on_gyro(Message(data='OK'))
+                m.on_drive(odom(t, 0., 0.))
+                if i % 2 == 0:
+                    m.on_rf(odom(t, 0.03*math.sin(3*t), 0.))
+                m.evaluate()
+                if m.request_pub.publish.called:
+                    ack = m.request_pub.publish.call_args.args[0].data
+                    m.request_pub.publish.reset_mock()
+                if t > 5.:
+                    self.assertFalse(ack)
+                    self.assertTrue(m.gate)
+
     def test_gate_fault_ack_and_rearm(self):
         module = load_monitor()
         now = [0.]

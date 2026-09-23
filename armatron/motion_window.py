@@ -25,7 +25,8 @@ def interpolate(rows, t, heading=False):
 
 class MotionWindow:
     def __init__(self, distance_floor=0.015, relative_error=0.4, angle_floor=0.10,
-                 timing_tolerance=0.2, rotation_translation_tolerance=0.125):
+                 timing_tolerance=0.2, rotation_translation_tolerance=0.125,
+                 stationary_distance=0.08, stationary_angle=0.25):
         self.drive = deque()
         self.rf = deque()
         self.distance_floor = distance_floor
@@ -33,6 +34,11 @@ class MotionWindow:
         self.angle_floor = angle_floor
         self.timing_tolerance = timing_tolerance
         self.rotation_translation_tolerance = rotation_translation_tolerance
+        self.stationary_distance = stationary_distance
+        self.stationary_angle = stationary_angle
+        if not all(math.isfinite(v) and v > 0 for v in
+                   (stationary_distance, stationary_angle)):
+            raise ValueError('Stationary tolerances must be positive and finite')
 
     def add(self, kind, t, values):
         rows = getattr(self, kind)
@@ -83,6 +89,13 @@ class MotionWindow:
         rotation_limit = (self.angle_floor + self.relative_error*max(abs(dyaw),abs(myaw)) +
                           max_turn*self.timing_tolerance)
         bad = residual > translation_limit or abs(angle(dyaw-myaw)) > rotation_limit
+        # Moving people can shift scan matching while the base is at rest.
+        # Use a separate absolute noise allowance only when drive telemetry was
+        # stationary throughout this window. Do not weaken slow-stall detection.
+        stationary = max_speed < 0.005 and max_turn < 0.01
+        if stationary:
+            bad = (residual > self.stationary_distance or
+                   abs(angle(dyaw-myaw)) > self.stationary_angle)
         return {'bad': bad, 'end': end, 'residual': residual,
                 'measured_distance': math.hypot(mx,my), 'measured_angle': abs(myaw)}
 

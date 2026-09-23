@@ -25,7 +25,9 @@ class MotionConsistencyMonitor(Node):
         self.window = MotionWindow(param('distance_floor', 0.015),
                                    param('relative_error', 0.4), param('angle_floor', 0.10),
                                    param('timing_tolerance', 0.2),
-                                   param('rotation_translation_tolerance', 0.125))
+                                   param('rotation_translation_tolerance', 0.125),
+                                   param('stationary_distance', 0.08),
+                                   param('stationary_angle', 0.25))
         self.recovery = Recovery(param('auto_rearm', True), param('quiet_seconds', 3.0))
         self.use_drive = param('use_drive_fusion', True)
         self.drive_variance = param('drive_velocity_variance', 0.0025)
@@ -129,7 +131,8 @@ class MotionConsistencyMonitor(Node):
         command = self.command if now-self.command_at < 1.2 else (0.,0.,0.)
         quiet = (healthy and max(abs(v) for v in command) < 0.005 and
                  max(abs(v) for v in self.drive_speed) < 0.01 and
-                 short['measured_distance'] < 0.01 and short['measured_angle'] < 0.04)
+                 short['measured_distance'] < self.window.stationary_distance and
+                 short['measured_angle'] < self.window.stationary_angle)
         request = self.recovery.step(now, healthy, fault, quiet,
                                      self.ack if now-self.ack_at < 0.5 else None)
         if request is not None:

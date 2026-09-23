@@ -111,6 +111,17 @@ the same health and quiet checks:
 ros2 service call /motion_consistency/reset std_srvs/srv/Empty
 ```
 
+Stationary telemetry uses a separate scan-matching noise allowance: 8 cm and
+0.25 rad of disagreement per comparison window. It applies only when drive
+speed stays below 0.005 m/s and yaw rate below 0.01 rad/s throughout the window.
+Moving comparisons retain their tighter thresholds, including slow stalls.
+The quiet re-arm dwell uses the same lidar allowance, so small moving-scene
+errors do not prevent recovery. Larger apparent displacement still triggers
+the carrying/mismatch response; RF2O alone cannot distinguish carrying from
+a sufficiently large moving-scene error. Small or very slow carrying may remain
+below these thresholds. Configure `stationary_distance` and `stationary_angle`
+to change this tradeoff.
+
 Settings are in `config/odometry/monitor.yaml`; restart hardware after changing
 them. `auto_rearm: false` requires the operator request above. For an RF2O+gyro
 baseline, set `use_drive_fusion: false`: raw steps are still recorded and the
