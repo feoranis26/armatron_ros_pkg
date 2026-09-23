@@ -8,9 +8,6 @@ import adafruit_bno055
 import errno
 import time
 
-from .udp_device import UDPDevice
-
-
 class GyroPublisher():
     def __init__(self, ip, portnum) -> None:
         self.i2c = board.I2C()
