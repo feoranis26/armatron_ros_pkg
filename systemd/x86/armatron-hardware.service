@@ -8,6 +8,7 @@ Type=simple
 User=feoranis
 Environment=ARMATRON_WORKSPACE=/home/feoranis/dev_ws
 Environment=ROS_DOMAIN_ID=67
+StateDirectory=armatron
 ExecStart=/home/feoranis/dev_ws/install/armatron/lib/armatron/run-armatron ros2 launch armatron hardware.launch.py
 KillSignal=SIGINT
 TimeoutStopSec=15

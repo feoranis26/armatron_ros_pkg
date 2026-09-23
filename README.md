@@ -48,6 +48,10 @@ ros2 launch armatron visualization.launch.py
 
 ## Fused odometry and map profiles
 
+Loss of gyro telemetry latches a heading fault: propulsion is inhibited, scans
+are blocked, EKF processing is paused, and map saves are refused. Packet recovery
+does not resume navigation. See [heading fault recovery](docs/heading-fault-recovery.md).
+
 The EKF uses RF2O-derived body-frame translation velocity and BNO heading
 on `/imu/gyro`. Wheel-derived yaw rate is excluded. The x86 bridge adapts the
 existing UDP Euler heading into a yaw-only IMU message; angular velocity and

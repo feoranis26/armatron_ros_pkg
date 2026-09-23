@@ -49,7 +49,11 @@ class DriveSafetyTest(unittest.TestCase):
         node.last_safety_sample = None
         node.driver = Mock(safety_sample=(False, 100.), position=[0., 0.], speed=[0., 0.])
         node.safety_publisher = Mock()
-        node.gyro = NS(angle=None, sample=None)
+        node.gyro = NS(angle=0., sample=None)
+        node.gyro_seen = False
+        node.heading_ready = True
+        node.heading_ready_at = 100.
+        node.heading_seen = True
         node.gyro_imu = Mock()
         node.gyro_imu.message.return_value = None
         node.get_clock = Mock(return_value=Mock())
@@ -63,9 +67,21 @@ class DriveSafetyTest(unittest.TestCase):
         node.position = NS(x=0., y=0.)
         node.odom_update = Mock()
         with patch('time.monotonic', return_value=100.), patch('time.time', return_value=100.):
-            node.tick()  # No monitor heartbeat or sensor data required.
+            node.tick()  # No motion-consistency heartbeat required.
             node.driver.drive.assert_called_with(0.4, 0.2, 0.1)
             node.on_safety_stop(None, None)
+            node.tick()
+            node.driver.drive.assert_called_with(0., 0., 0.)
+            node.lastSpeedReceived = 100.
+            node.inhibit_requested = False
+            node.gyro.angle = None
+            node.tick()
+            self.assertTrue(node.inhibit_requested)
+            node.driver.drive.assert_called_with(0., 0., 0.)
+            node.on_safety_reset(None, None)
+            self.assertTrue(node.inhibit_requested)
+            node.gyro.angle = 0.
+            node.tgt_speed = [0.4, 0., 0.]
             node.tick()
             node.driver.drive.assert_called_with(0., 0., 0.)
             node.driver.safety_stop.assert_called()
@@ -83,4 +99,10 @@ class DriveSafetyTest(unittest.TestCase):
             node.driver.safety_sample = (False, 100.)
             node.lastSpeedReceived = 98.
             node.tick()  # Stale cmd_vel still zeros the command.
+            node.driver.drive.assert_called_with(0., 0., 0.)
+            node.inhibit_requested = False
+            node.heading_ready_at = 99.
+            node.lastSpeedReceived = 100.
+            node.tick()  # Guard death blocks drive even with fresh gyro packets.
+            self.assertTrue(node.inhibit_requested)
             node.driver.drive.assert_called_with(0., 0., 0.)

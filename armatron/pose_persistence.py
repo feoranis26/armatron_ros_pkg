@@ -6,7 +6,7 @@ import rclpy
 from geometry_msgs.msg import PoseWithCovarianceStamped
 from rclpy.node import Node
 
-from .map_state import load_state, save_state
+from .map_state import load_state, save_state, state_root
 
 
 class PosePersistence(Node):
@@ -39,6 +39,8 @@ class PosePersistence(Node):
             self.persist()
 
     def persist(self):
+        if (state_root() / 'heading_fault.json').exists():
+            return
         if self.last_pose is None:
             return
         state = load_state()

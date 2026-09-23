@@ -9,6 +9,7 @@ from launch.substitutions import PathJoinSubstitution
 def generate_launch_description():
     share = FindPackageShare("armatron")
     return LaunchDescription([
+        Node(package='armatron', executable='heading_guard', name='heading_guard'),
         Node(
             package="rf2o_laser_odometry",
             executable="rf2o_laser_odometry_node",

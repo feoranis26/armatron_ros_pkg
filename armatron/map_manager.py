@@ -72,6 +72,9 @@ def command_set_mode(args):
 
 
 def command_save(args):
+    if (args.root / 'heading_fault.json').exists():
+        raise RuntimeError('Map save refused: heading fault latched. Repair gyro and '
+                           'verify localization before clearing heading_fault.json.')
     state = load_state(args.root)
     if not state["active_profile"]:
         raise RuntimeError("No active ARMATRON map profile. Run: ros2 run armatron armatron-map select <profile>")
