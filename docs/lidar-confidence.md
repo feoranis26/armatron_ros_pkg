@@ -44,14 +44,26 @@ Each candidate maps current points into the reference base frame:
 - Zero base translation with the same gyro heading change.
 
 The comparison uses bounded point-to-line errors against locally connected
-reference scan surfaces. All candidates score the same current points;
-unmatched points incur a fixed penalty. Fit error, overlap and inlier count
-must pass minimum checks. A normalized information matrix identifies weak
-directions, with rotation scaled by a 2 m lever arm. Additional positive and
-negative 10 cm probes test score ambiguity along the weakest translation
-direction. This is an independent diagnostic fit, not RF2O's actual objective
-or a replacement scan matcher. Sparse features, repeated geometry, dynamic
-objects and partial occlusions can still mislead it.
+reference scan surfaces. Every candidate uses the same gyro rotation, isolating
+translation evidence from yaw disagreement. Scores use the intersection of
+matched scan points across all three candidates. Missing overlap and excessive
+candidate-dependent loss are assessed separately; unmatched points no longer
+add a constant error floor to the hypothesis comparison.
+
+A normalized information matrix measures sensitivity along the drive/RF2O
+translation disagreement direction (or travel direction when they agree, or the
+weakest direction at rest). The directional strength must be at least 20% of the
+strongest translation constraint. A corridor can therefore constrain sideways
+motion while leaving longitudinal travel uncertain. Rotation remains scaled by
+a 2 m lever arm for the published full matrix, but an unrelated weak rotation
+or translation direction no longer automatically rejects all translation.
+
+Contradiction requires paired squared residual improvement exceeding both the
+squared score_margin and a conservative three-standard-error bound, with the
+effective beam count capped at 20 because neighboring beams are correlated.
+This is a heuristic bound, not a calibrated statistical test. RF2O/gyro yaw
+disagreement above 0.15 rad is reported as unreliable tracking, not a translation
+stall. Repeated geometry, occlusions and dynamic scenes can still mislead it.
 
 Native `/rf2o/solver_diagnostics` describes the laser-frame solver matrix.
 Independent `/lidar/confidence` information and directions describe the
@@ -61,11 +73,11 @@ reference base frame. Neither is covariance; do not feed these matrices to an EK
 
 `/lidar/confidence` is JSON in std_msgs/String (schema 1), carrying scan and
 reference timestamps, frame, candidate and confirmed state, reason, hypothesis
-poses, fit scores, overlap, inliers, information eigenvalues/directions, probe
-errors, native solver metrics, and evaluation runtime.
+poses, fit scores, overlap, inliers, information eigenvalues/directions, tested
+translation direction and strength, common overlap, native solver metrics, and evaluation runtime.
 
 - `CONSISTENT`: drive prediction is compatible with constrained scan evidence.
-- `LIDAR_UNDERCONSTRAINED`: weak geometric direction or ambiguous probe scores.
+- `LIDAR_UNDERCONSTRAINED`: weak constraints along the tested translation direction.
 - `MOTION_CONTRADICTED`: a reliable RF2O fit materially outperforms the drive
   prediction. `near_zero_supported` adds evidence compatible with a stall,
   but also with an incorrect strafe model; it is not a confirmed stall.
@@ -82,8 +94,8 @@ wheel fusion remains off. The confidence node subscribes to /scan and therefore
 counts as a consumer for lidar-demand standby.
 
 Initial thresholds live in config/odometry/confidence.yaml. In particular,
-the 2.5 cm alignment-score margin is an aggregate fit difference, not a base
-displacement limit. No probability or guaranteed stall detection is claimed.
+the 2.5 cm score_margin is squared when comparing mean squared residuals;
+it is neither a base displacement limit nor a difference of aggregate RMS scores. No probability or guaranteed stall detection is claimed.
 
 ## Record and replay
 
@@ -112,3 +124,27 @@ Synthetic tests exercise a corridor, a room, a stationary contradiction,
 RF2O underestimation, rotation, missing geometry/overlap, timestamp gaps, and
 state persistence. ROS/Linux runtime and real scene validation are still needed
 before enabling adaptive covariance. Observe evaluation_ms to assess x86 load.
+
+## Classifier regression results (September 23)
+
+Offline replay reuses recorded scan intervals and motion hypotheses, then
+recomputes scores and state dwell from the raw scans. It isolates classification;
+it is not a live ROS timing replay. Run it without ROS using Python and NumPy:
+
+```bash
+python3 src/armatron/tools/replay_scan_evidence.py hallway_confidence/hallway_confidence_0.db3 --output hallway-revised.jsonl
+```
+
+The supplied hallway bag yields 509 confirmed CONSISTENT, 291
+LIDAR_UNDERCONSTRAINED and four initial UNAVAILABLE evaluations. No confirmed
+motion contradictions occur. The stall bag yields 409 CONSISTENT, 21
+MOTION_CONTRADICTED and four initial UNAVAILABLE evaluations. Seven hallway
+and six stall evaluations lack a reference scan captured inside the bag and
+are skipped. The faster stall is detected; the earlier slow stall is not
+reliably detected at the current 0.6-second comparison interval. CONSISTENT
+means insufficient evidence to reject the drive prediction, not proof of motion.
+The strafing tail produces no sustained contradiction.
+
+These recordings informed the revision and are regression checks, not an
+independent validation set. Fusion and propulsion behavior remain unchanged.
+A fresh hallway/stall check is still needed before using confidence for fusion.

@@ -22,17 +22,21 @@ class ScanEvidence:
     def __init__(self, max_points=240, min_points=30, max_gap=0.5,
                  match_distance=0.4, residual_cap=0.25, min_overlap=0.55,
                  max_error=0.12, weak_ratio=0.03, min_strength=0.005,
-                 rotation_scale=2.0, score_margin=0.025, probe_distance=0.10):
+                 rotation_scale=2.0, score_margin=0.025, directional_ratio=0.20, max_overlap_loss=0.25):
         self.__dict__.update(locals())
         del self.self
         if max_points < min_points or min_points < 6:
             raise ValueError('Require max_points >= min_points >= 6')
         if not all(math.isfinite(v) and v > 0 for v in
                    (max_gap, match_distance, residual_cap, max_error, weak_ratio,
-                    min_strength, rotation_scale, score_margin, probe_distance)):
+                    min_strength, rotation_scale, score_margin, directional_ratio)):
             raise ValueError('Evidence scales must be finite and positive')
         if not 0 < min_overlap <= 1:
             raise ValueError('min_overlap must be in (0, 1]')
+        if not 0 <= max_overlap_loss < 1:
+            raise ValueError('max_overlap_loss must be in [0, 1)')
+        if directional_ratio > 1:
+            raise ValueError('directional_ratio must be in (0, 1]')
 
     def analyze(self, reference, current, hypotheses):
         reference = np.asarray(reference, dtype=float)
@@ -61,56 +65,88 @@ class ScanEvidence:
         ids = np.linspace(0, len(target)-1, min(len(target), self.max_points*2)).astype(int)
         target, normals = target[ids], normals[ids]
 
-        def score(pose, details=False):
+        if any(k not in hypotheses or np.shape(hypotheses[k]) != (3,) or
+               not np.isfinite(hypotheses[k]).all() for k in ('rf2o', 'drive', 'zero')):
+            return {'state': 'UNAVAILABLE', 'reason': 'invalid motion hypothesis'}
+        poses = {k: np.asarray(hypotheses[k], dtype=float).copy() for k in ('rf2o', 'drive', 'zero')}
+        # Test translation with the SAME independent gyro rotation. Otherwise a
+        # yaw discrepancy can masquerade as evidence against drive translation.
+        rf_yaw = poses['rf2o'][2]
+        poses['rf2o'][2] = poses['zero'][2]
+        poses['drive'][2] = poses['zero'][2]
+
+        def match(pose):
             moved = points @ rotation(pose[2]).T + pose[:2]
             distances = np.sum((moved[:, None, :]-target[None, :, :])**2, axis=2)
             indices = distances.argmin(axis=1)
-            offsets = moved-target[indices]
             n = normals[indices]
-            residual = np.sum(n*offsets, axis=1)
+            residual = np.sum(n*(moved-target[indices]), axis=1)
             matched = distances[np.arange(len(points)), indices] < self.match_distance**2
-            # Every candidate pays for the same points. No free score improvement
-            # by dropping mismatches, occluded points, or poor overlap.
-            errors = np.where(matched, np.minimum(residual**2, self.residual_cap**2), self.residual_cap**2)
-            result = {'error': float(np.sqrt(errors.mean())), 'overlap': float(matched.mean())}
-            if details:
-                inliers = matched & (np.abs(residual) < self.max_error)
-                p, n = moved[inliers], n[inliers]
-                jacobian = np.column_stack((n, (n[:, 1]*p[:, 0]-n[:, 0]*p[:, 1])/self.rotation_scale))
-                info = jacobian.T @ jacobian / max(1, len(jacobian))
-                result.update(inliers=int(inliers.sum()), information=info)
-            return result
+            return moved, n, residual, matched
 
-        if any(np.shape(hypotheses[k]) != (3,) or not np.isfinite(hypotheses[k]).all()
-               for k in ('rf2o', 'drive', 'zero')):
-            return {'state': 'UNAVAILABLE', 'reason': 'invalid motion hypothesis'}
-        scores = {name: score(np.asarray(pose)) for name, pose in hypotheses.items()}
-        best = min(scores, key=lambda k: scores[k]['error'])
-        fit = score(np.asarray(hypotheses[best]), True)
-        out = {'scores': scores, 'best': best, 'points': len(points), 'inliers': fit['inliers']}
-        if fit['overlap'] < self.min_overlap or fit['error'] > self.max_error or fit['inliers'] < self.min_points:
-            return dict(out, state='TRACKING_UNRELIABLE', reason='poor fit or overlap')
-        eigenvalues, eigenvectors = np.linalg.eigh(fit['information'])
-        strength = max(self.min_strength, float(eigenvalues[-1])*self.weak_ratio)
-        weak = eigenvalues < strength
-        # Probe the weakest direction with yaw held by the independent gyro.
-        translation_values, translation_vectors = np.linalg.eigh(fit['information'][:2, :2])
-        direction = translation_vectors[:, 0]
-        probe = np.array([*(direction*self.probe_distance), 0.])
-        probe_scores = [score(np.asarray(hypotheses[best])+sign*probe)['error'] for sign in (-1, 1)]
-        flat = max(probe_scores)-fit['error'] < self.score_margin
-        out.update(eigenvalues=eigenvalues.tolist(), weak_directions=eigenvectors[:, weak].T.tolist(),
+        matches = {k: match(v) for k, v in poses.items()}
+        # Use the intersection once, not a different set of inliers for each
+        # hypothesis. Missing overlap is a separate reliability failure, never
+        # a constant penalty that flattens the differences between scores.
+        support = np.logical_and.reduce([v[3] for v in matches.values()])
+        count = int(support.sum())
+        overlap = float(support.mean())
+        out = {'points': len(points), 'common_points': count, 'common_overlap': overlap}
+        if (count < self.min_points or overlap < self.min_overlap or
+                max(float(v[3].mean()) for v in matches.values())-overlap > self.max_overlap_loss):
+            return dict(out, state='TRACKING_UNRELIABLE', reason='insufficient common scan overlap')
+        errors = {k: np.minimum(v[2][support]**2, self.residual_cap**2) for k, v in matches.items()}
+        mse = {k: float(v.mean()) for k, v in errors.items()}
+        best = min(mse, key=mse.get)
+        scores = {k: {'error': math.sqrt(mse[k]), 'overlap': float(matches[k][3].mean())} for k in poses}
+        moved, n, residual, _ = matches[best]
+        inliers = support & (np.abs(residual) < self.max_error)
+        out.update(scores=scores, best=best, inliers=int(inliers.sum()))
+        if math.sqrt(mse[best]) > self.max_error or inliers.sum() < self.min_points:
+            return dict(out, state='TRACKING_UNRELIABLE', reason='poor common-support alignment')
+        p, normals_fit = moved[inliers], n[inliers]
+        j = np.column_stack((normals_fit, (normals_fit[:,1]*p[:,0]-normals_fit[:,0]*p[:,1])/self.rotation_scale))
+        info = j.T @ j / len(j)
+        eigenvalues, eigenvectors = np.linalg.eigh(info)
+        translation_values, translation_vectors = np.linalg.eigh(info[:2,:2])
+        weak = eigenvalues < max(self.min_strength, eigenvalues[-1]*self.weak_ratio)
+        difference = poses['drive'][:2]-poses['rf2o'][:2]
+        # Inspect the disagreement direction; if there is no material difference,
+        # inspect travel direction, or the weakest translation direction at rest.
+        direction = (difference if np.linalg.norm(difference) > self.score_margin else poses['drive'][:2])
+        if np.linalg.norm(direction) <= self.score_margin:
+            direction = translation_vectors[:,0]
+        direction = direction/np.linalg.norm(direction)
+        directional_strength = float(direction @ info[:2,:2] @ direction)
+        directional_ratio = directional_strength/max(float(translation_values[-1]), 1e-12)
+        # Curvature uses fixed correspondences and common support. This measures
+        # sensitivity, not a difference of RMS scores with a background offset.
+        sensitivity = float(np.mean((normals_fit @ direction)**2))
+        out.update(eigenvalues=eigenvalues.tolist(), weak_directions=eigenvectors[:,weak].T.tolist(),
                    translation_eigenvalues=translation_values.tolist(),
-                   weak_translation_direction=direction.tolist(), probe_errors=probe_scores,
-                   rotation_scale=self.rotation_scale, information=fit['information'].tolist())
-        if weak.any() or flat:
-            return dict(out, state='LIDAR_UNDERCONSTRAINED', reason='weak geometry or ambiguous translation score')
-        if scores['rf2o']['error'] > fit['error'] + self.score_margin:
-            return dict(out, state='TRACKING_UNRELIABLE', reason='RF2O hypothesis fits worse than an alternative')
-        if scores['drive']['error'] > fit['error'] + self.score_margin:
-            return dict(out, state='MOTION_CONTRADICTED', reason='scan alignment rejects drive prediction',
-                        near_zero_supported=scores['zero']['error'] <= fit['error']+self.score_margin)
-        return dict(out, state='CONSISTENT', reason='drive prediction compatible with constrained scans')
+                   weak_translation_direction=translation_vectors[:,0].tolist(),
+                   tested_direction=direction.tolist(), directional_strength=directional_strength,
+                   directional_ratio=directional_ratio, probe_curvature=sensitivity,
+                   rotation_scale=self.rotation_scale, information=info.tolist())
+        if directional_strength < self.min_strength or directional_ratio < self.directional_ratio:
+            return dict(out, state='LIDAR_UNDERCONSTRAINED', reason='weak constraints along tested translation direction')
+        if abs(math.atan2(math.sin(rf_yaw-poses['zero'][2]), math.cos(rf_yaw-poses['zero'][2]))) > 0.15:
+            return dict(out, state='TRACKING_UNRELIABLE', reason='RF2O and gyro rotation disagree')
+
+        def rejected(key):
+            paired = errors[key]-errors[best]
+            # A robust paired improvement must exceed both a physical noise
+            # floor and sampling uncertainty. Adjacent beams are correlated:
+            # cap effective sample count rather than treating every ray as iid.
+            uncertainty = 3.*float(paired.std())/math.sqrt(min(20, count))
+            return float(paired.mean()) > max(self.score_margin**2, uncertainty)
+
+        if rejected('rf2o'):
+            return dict(out, state='TRACKING_UNRELIABLE', reason='scan evidence rejects RF2O translation')
+        if rejected('drive'):
+            return dict(out, state='MOTION_CONTRADICTED', reason='paired scan evidence rejects drive translation',
+                        near_zero_supported=not rejected('zero'))
+        return dict(out, state='CONSISTENT', reason='drive translation compatible with scan evidence')
 
 
 class EvidenceDwell:

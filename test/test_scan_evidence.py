@@ -64,3 +64,25 @@ class EvidenceTest(unittest.TestCase):
             self.assertEqual(dwell.update(0.2, 'MOTION_CONTRADICTED'), 'UNAVAILABLE')
         self.assertEqual(dwell.update(0.6, 'MOTION_CONTRADICTED'), 'MOTION_CONTRADICTED')
         self.assertEqual(dwell.update(0.7, 'UNAVAILABLE'), 'UNAVAILABLE')
+
+    def test_corridor_sideways_motion_is_observable(self):
+        result = self.analyze(room_scan((0., 0.2), True), [0., 0.2, 0.], [0., 0.2, 0.], True)
+        self.assertEqual(result['state'], 'CONSISTENT', result)
+        self.assertGreater(result['directional_ratio'], 0.9)
+
+    def test_background_unmatched_returns_do_not_imply_flat_geometry(self):
+        reference = room_scan()
+        current = reference.copy()
+        current[::5] *= 3.  # Common missing overlap, not translation uncertainty.
+        result = self.engine.analyze(reference, current,
+                   {k: [0., 0., 0.] for k in ('rf2o', 'drive', 'zero')})
+        self.assertEqual(result['state'], 'CONSISTENT', result)
+        self.assertLess(result['common_overlap'], 0.9)
+
+    def test_yaw_disagreement_cannot_be_called_translation_stall(self):
+        result = self.analyze(room_scan(), [0., 0., 0.25], [0.3, 0., 0.])
+        self.assertEqual(result['state'], 'TRACKING_UNRELIABLE', result)
+
+    def test_candidate_cannot_win_by_dropping_overlap(self):
+        result = self.analyze(room_scan(), [0., 0., 0.], [2., 0., 0.])
+        self.assertEqual(result['state'], 'TRACKING_UNRELIABLE', result)

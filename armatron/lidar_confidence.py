@@ -40,7 +40,7 @@ class LidarConfidence(Node):
             'max_points': 240, 'min_points': 30, 'max_gap': 0.5,
             'match_distance': 0.4, 'residual_cap': 0.25, 'min_overlap': 0.55,
             'max_error': 0.12, 'weak_ratio': 0.03, 'min_strength': 0.005,
-            'rotation_scale': 2.0, 'score_margin': 0.025, 'probe_distance': 0.10}.items()})
+            'rotation_scale': 2.0, 'score_margin': 0.025, 'directional_ratio': 0.20, 'max_overlap_loss': 0.25}.items()})
         self.dwell = EvidenceDwell()
         self.drive, self.gyro, self.rf = History(), History(), History()
         self.scans, self.solver = deque(), deque()
