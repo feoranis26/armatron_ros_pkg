@@ -89,7 +89,7 @@ geometry and alternative motion hypotheses. Monitor status distinguishes
 `CONSISTENT`, `LIDAR_UNDERCONSTRAINED`, `MOTION_CONTRADICTED`,
 `TRACKING_UNRELIABLE`, and `UNAVAILABLE`; raw estimate disagreement remains a
 separate field. See [lidar confidence](docs/lidar-confidence.md) for the required
-RF2O diagnostics patch, recording/replay commands and validation limits.
+RF2O source fork, recording/replay commands and validation limits.
 Disagreement, missing sensors,
 and loss of the monitor do not inhibit propulsion. A corridor, slipping wheels,
 a stall, carrying, and moving scenery can produce indistinguishable disagreement.
@@ -111,9 +111,9 @@ commands while Pi feedback is stale or the Pi latch is set, retries explicit
 stop/reset requests, and zeros commands after one second without `/cmd_vel`.
 The Pi's independent 500 ms UDP command timeout remains unchanged.
 
-For confidence diagnostics, apply the recorded RF2O patch and rebuild RF2O first,
+For confidence diagnostics, switch to the RF2O fork branch and rebuild RF2O first,
 then run the x86 refresh script as described in the linked guide. No Pi update
-is required. Until the patch is installed, confidence reports `UNAVAILABLE`;
+is required. Until the fork diagnostics are built, confidence reports `UNAVAILABLE`;
 RF2O odometry and driving continue. Adaptive EKF covariance and wheel fallback
 remain deferred pending real-scene validation.
 An old latched stop is intentionally not cleared automatically. With motion

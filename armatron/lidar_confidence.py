@@ -129,7 +129,7 @@ class LidarConfidence(Node):
                 continue
             native = [(abs(s-t), values) for s, values in self.solver if abs(s-t) < 0.00001]
             if not native:
-                self.last_reason = 'RF2O solver diagnostics missing; install RF2O patch'
+                self.last_reason = 'RF2O solver diagnostics missing; build the RF2O confidence-diagnostics fork branch'
                 continue
             metrics = min(native, key=lambda row: row[0])[1]
             start = time.monotonic()

@@ -1,5 +1,5 @@
 repositories:
   rf2o_laser_odometry:
     type: git
-    url: https://github.com/Adlink-ROS/rf2o_laser_odometry.git
-    version: 313bb4c4123bcc0cc2e042f278312b19a3c46f31
+    url: https://github.com/feoranis26/rf2o_laser_odometry.git
+    version: 4a0c245bdc00c5757f4bcee16fd8598f8c06e26f

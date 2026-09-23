@@ -1,2 +1,0 @@
-# Patch context must preserve upstream whitespace verbatim.
-dependencies/*.patch text eol=lf whitespace=-blank-at-eol

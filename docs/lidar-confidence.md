@@ -10,18 +10,22 @@ the diagnostics. A raw drive/RF2O difference is not a confirmed stall.
 From the workspace (adjust the ARMATRON checkout name):
 
 ```bash
-python3 src/armatron/dependencies/patch_rf2o.py src/rf2o_laser_odometry
+git -C src/rf2o_laser_odometry remote set-url origin https://github.com/feoranis26/rf2o_laser_odometry.git
+git -C src/rf2o_laser_odometry fetch origin
+git -C src/rf2o_laser_odometry switch --track origin/confidence-diagnostics
 colcon build --symlink-install --packages-select rf2o_laser_odometry
 ./src/armatron/systemd/refresh.sh x86
 ros2 topic echo /lidar/confidence
 ```
 
 Install `ros-humble-diagnostic-msgs` and `python3-numpy` if missing, or resolve
-package dependencies with rosdep. The patch installer refuses incompatible
-source changes and is safe to repeat. The pinned dependency manifest supports
-fresh checkouts. No Pi update is required.
+package dependencies with rosdep. These switch commands are for the first move
+to the fork branch; subsequently use `git pull --ff-only` in that checkout.
+If earlier patches or other uncommitted edits prevent switching, preserve them
+before switching; do not discard them blindly. The pinned dependency manifest
+supports fresh checkouts. No Pi update is required.
 
-Without the RF2O patch, confidence reports `UNAVAILABLE` with an explanation;
+Without the fork diagnostics, confidence reports `UNAVAILABLE` with an explanation;
 the existing odometry path and propulsion continue normally.
 
 ## Evidence and frames
