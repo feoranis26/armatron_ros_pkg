@@ -19,6 +19,7 @@ class MapResumeTest(unittest.TestCase):
             def __init__(self, *args):
                 self.create_subscription = Mock()
                 self.create_timer = Mock()
+                self.declare_parameter = lambda name, default: SimpleNamespace(value=default)
         for name, attrs in {'rclpy': {}, 'rclpy.node': {'Node': Node},
                             'geometry_msgs': {}, 'geometry_msgs.msg':
                             {'PoseWithCovarianceStamped': object}}.items():

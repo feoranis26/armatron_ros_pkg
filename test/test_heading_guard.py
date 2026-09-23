@@ -14,6 +14,8 @@ def load(name):
             self.__dict__.update(kwargs)
     for key, attrs in {
         'rclpy': {}, 'rclpy.node': {'Node': object},
+        'rclpy.time': {'Time': object},
+        'tf2_ros': {'Buffer': object, 'TransformListener': object, 'TransformException': Exception},
         'sensor_msgs.msg': {'Imu': Message, 'LaserScan': Message},
         'std_msgs.msg': {'Bool': Message, 'String': Message},
         'robot_localization.srv': {'ToggleFilterProcessing': NS(Request=Message)},

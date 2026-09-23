@@ -14,7 +14,8 @@ class PosePersistence(Node):
         super().__init__('map_pose_persistence')
         self.last_pose = None
         self.profile = load_state()['active_profile']
-        self.create_subscription(PoseWithCovarianceStamped, '/pose',
+        topic = self.declare_parameter('pose_topic', '/pose').value
+        self.create_subscription(PoseWithCovarianceStamped, topic,
                                  self.on_pose, 10)
         self.create_timer(5.0, self.persist)
 

@@ -24,6 +24,11 @@ def generate_launch_description():
             'No active ARMATRON map profile. Run: ros2 run armatron armatron-map select <profile>')
     selected_profile = profile_dir(active_profile)
     map_file = selected_profile / 'current' / 'map'
+    amcl = state['mode'] == 'amcl'
+    grid_file = selected_profile / 'current' / 'grid' / 'map.yaml'
+    if amcl and not grid_file.is_file():
+        raise RuntimeError('AMCL needs a grid export. While mapping, run: '
+                           'ros2 run armatron armatron-map save --with-grid')
     last_pose = state.get('last_pose')
     map_start_pose = ([last_pose['x'], last_pose['y'], last_pose['yaw']]
                       if last_pose and map_file.with_suffix('.posegraph').exists()
@@ -37,6 +42,10 @@ def generate_launch_description():
             FindPackageShare('armatron'), 'config', 'nav2', 'navigation.yaml'
         ]),
         param_rewrites={
+            'amcl.ros__parameters.set_initial_pose': str(bool(last_pose)),
+            'amcl.ros__parameters.initial_pose.x': str(float(last_pose['x']) if last_pose else 0.0),
+            'amcl.ros__parameters.initial_pose.y': str(float(last_pose['y']) if last_pose else 0.0),
+            'amcl.ros__parameters.initial_pose.yaw': str(float(last_pose['yaw']) if last_pose else 0.0),
             'controller_server.ros__parameters.FollowPath.min_vel_y': PythonExpression(
                 ["'-0.075' if '", holonomic, "'.lower() == 'true' else '0.0'"]
             ),
@@ -68,10 +77,10 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('holonomic', default_value='false'),
-        DeclareLaunchArgument('slam', default_value='True'),
+        DeclareLaunchArgument('slam', default_value='False' if amcl else 'True'),
         DeclareLaunchArgument(
             'map',
-            default_value=PathJoinSubstitution([
+            default_value=str(grid_file) if amcl else PathJoinSubstitution([
                 FindPackageShare('armatron'), 'maps', 'ai_room.map.yaml'
             ]),
         ),
@@ -79,6 +88,7 @@ def generate_launch_description():
             package='armatron',
             executable='pose_persistence',
             name='map_pose_persistence',
+            parameters=[{'pose_topic': '/amcl_pose' if amcl else '/pose'}],
         ),
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([
@@ -87,7 +97,7 @@ def generate_launch_description():
             launch_arguments={
                 'params_file': params,
                 'map': LaunchConfiguration('map'),
-                'slam': LaunchConfiguration('slam'),
+                'slam': 'False' if amcl else LaunchConfiguration('slam'),
                 'use_sim_time': 'false',
             }.items(),
         ),

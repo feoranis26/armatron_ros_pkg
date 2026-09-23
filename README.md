@@ -48,6 +48,9 @@ ros2 launch armatron visualization.launch.py
 
 ## Fused odometry and map profiles
 
+For isolated costmap noise, profile self-return masks, and the optional AMCL
+profile mode, see [scan masks and AMCL](docs/scan-masks-and-amcl.md).
+
 Loss of gyro telemetry latches a heading fault: propulsion is inhibited, scans
 are blocked, EKF processing is paused, and map saves are refused. Packet recovery
 does not resume navigation. See [heading fault recovery](docs/heading-fault-recovery.md).

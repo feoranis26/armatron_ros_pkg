@@ -42,7 +42,10 @@ def generate_launch_description():
         Node(
             package="armatron",
             executable="scan_filter",
-            name="scan_filter"
+            name="scan_filter",
+            parameters=[PathJoinSubstitution([
+                FindPackageShare('armatron'), 'config', 'odometry', 'scan_filter.yaml'
+            ])],
         ),
 
         Node(

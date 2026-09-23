@@ -1,0 +1,9 @@
+scan_filter:
+  ros__parameters:
+    # Empty means coordinates in each incoming scan's frame; base_link also works.
+    mask_frame: "laser_frame"
+    # JSON list of [center_x, center_y, width, height, yaw_radians], metres/radians.
+    # Recorded mounting rotates laser_frame ~180 degrees relative to base_link.
+    # Near pair is toward robot front (+base_link X), hence -laser_frame X.
+    profile_boxes: '[[-0.043, -0.160, 0.020, 0.020, 0.0], [-0.043, 0.160, 0.020, 0.020, 0.0], [0.277, -0.160, 0.020, 0.020, 0.0], [0.277, 0.160, 0.020, 0.020, 0.0]]'
+    mask_padding: 0.005

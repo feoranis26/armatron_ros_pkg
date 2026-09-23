@@ -106,6 +106,10 @@ def command_save(args):
     if any(not path.is_file() or path.stat().st_size == 0 for path in artifacts):
         raise RuntimeError("slam_toolbox reported success but did not produce both nonempty "
                            f"map.posegraph and map.data files; inspect {staging}")
+    # Once this profile has a grid, keep exporting it on automatic saves too.
+    # Otherwise ExecStop would discard the grid just exported by the operator.
+    if getattr(args, 'with_grid', False) or (directory / 'current' / 'grid').is_dir():
+        export_grid(staging / 'grid', args.timeout)
     previous = directory / "previous"
     current = directory / "current"
     shutil.rmtree(previous, ignore_errors=True)
@@ -113,6 +117,36 @@ def command_save(args):
         current.replace(previous)
     staging.replace(current)
     print(f"Saved {state['active_profile']}; previous revision retained.")
+
+
+def export_grid(directory, timeout):
+    directory.mkdir()
+    completed = subprocess.run(
+        ['ros2', 'run', 'nav2_map_server', 'map_saver_cli', '-t', '/map',
+         '-f', str(directory / 'map'), '--fmt', 'pgm'],
+        capture_output=True, text=True, timeout=timeout)
+    map_yaml = directory / 'map.yaml'
+    if completed.returncode or not map_yaml.is_file():
+        raise RuntimeError('Occupancy-grid export failed; previous revision retained:\n' +
+                           completed.stdout + completed.stderr)
+    metadata = yaml.safe_load(map_yaml.read_text())
+    image = directory / Path(metadata['image']).name
+    if not image.is_file() or image.stat().st_size == 0:
+        raise RuntimeError('Map export produced no image; previous revision retained')
+    # Keep the grid portable when staging is promoted to current.
+    metadata['image'] = image.name
+    map_yaml.write_text(yaml.safe_dump(metadata), encoding='utf-8')
+
+
+def command_global_localize(args):
+    if load_state(args.root)['mode'] != 'amcl':
+        raise RuntimeError('Global localization requires an active AMCL session/profile mode')
+    completed = subprocess.run(
+        ['ros2', 'service', 'call', '/reinitialize_global_localization',
+         'std_srvs/srv/Empty', '{}'], capture_output=True, text=True, timeout=args.timeout)
+    if completed.returncode:
+        raise RuntimeError(completed.stdout + completed.stderr)
+    print('AMCL global localization requested. Verify convergence before sending a goal.')
 
 
 def command_interactive(args):
@@ -141,14 +175,19 @@ def parser():
     create.set_defaults(func=command_new)
     select = commands.add_parser("select", help="Select a profile and optionally its mode")
     select.add_argument("name")
-    select.add_argument("--mode", choices=("mapping", "localization"))
+    select.add_argument("--mode", choices=("mapping", "localization", "amcl"))
     select.set_defaults(func=command_select)
     mode = commands.add_parser("set-mode", help="Choose mapping or localization")
-    mode.add_argument("mode", choices=("mapping", "localization"))
+    mode.add_argument("mode", choices=("mapping", "localization", "amcl"))
     mode.set_defaults(func=command_set_mode)
     save = commands.add_parser("save", help="Serialize the active SLAM map")
     save.add_argument("--timeout", type=float, default=20.0)
+    save.add_argument('--with-grid', action='store_true',
+                      help='Also export /map for AMCL before promoting the revision')
     save.set_defaults(func=command_save)
+    global_loc = commands.add_parser('global-localize', help='Spread AMCL particles across the map')
+    global_loc.add_argument('--timeout', type=float, default=20.0)
+    global_loc.set_defaults(func=command_global_localize)
     return result
 
 
