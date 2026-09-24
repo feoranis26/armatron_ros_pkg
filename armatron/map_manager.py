@@ -103,10 +103,8 @@ def command_save(args):
     if any(not path.is_file() or path.stat().st_size == 0 for path in artifacts):
         raise RuntimeError("slam_toolbox reported success but did not produce both nonempty "
                            f"map.posegraph and map.data files; inspect {staging}")
-    # Once this profile has a grid, keep exporting it on automatic saves too.
-    # Otherwise ExecStop would discard the grid just exported by the operator.
-    if getattr(args, 'with_grid', False) or (directory / 'current' / 'grid').is_dir():
-        export_grid(staging / 'grid', args.timeout)
+    # Every promoted mapping revision must be usable for AMCL recovery.
+    export_grid(staging / 'grid', args.timeout)
     previous = directory / "previous"
     current = directory / "current"
     shutil.rmtree(previous, ignore_errors=True)
@@ -185,7 +183,7 @@ def parser():
     save = commands.add_parser("save", help="Serialize the active SLAM map")
     save.add_argument("--timeout", type=float, default=20.0)
     save.add_argument('--with-grid', action='store_true',
-                      help='Also export /map for AMCL before promoting the revision')
+                      help='Compatibility flag: mapping saves always include the AMCL grid')
     save.set_defaults(func=command_save)
     global_loc = commands.add_parser('global-localize', help='Spread AMCL particles across the map')
     global_loc.add_argument('--timeout', type=float, default=20.0)

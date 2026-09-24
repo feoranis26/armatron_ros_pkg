@@ -26,7 +26,7 @@ class AmclGridTest(unittest.TestCase):
                 (stage/'map.data').write_text('data')
                 return NS(returncode=0,stdout='response:\nSerializePoseGraph_Response(result=0)',stderr='')
             with patch('armatron.map_manager.subprocess.run', side_effect=call) as run:
-                command_save(NS(root=root,timeout=20,with_grid=True))
+                command_save(NS(root=root,timeout=20))
                 command_save(NS(root=root,timeout=20))
                 self.assertEqual(run.call_count,4)
                 grid = profile/'current/grid'

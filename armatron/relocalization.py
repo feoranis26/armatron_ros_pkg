@@ -15,6 +15,7 @@ import uuid
 import yaml
 
 from .map_state import load_state, profile_dir, save_state
+from .map_manager import export_grid
 from .relocalization_checks import planar_pose, nearby, stationary
 
 
@@ -26,9 +27,9 @@ def run(args):
     import rclpy
     from rclpy.node import Node
     from rclpy.time import Time
-    from rclpy.qos import qos_profile_sensor_data
+    from rclpy.qos import qos_profile_sensor_data, QoSProfile, DurabilityPolicy
     from geometry_msgs.msg import PoseWithCovarianceStamped
-    from nav_msgs.msg import Odometry
+    from nav_msgs.msg import Odometry, OccupancyGrid
     from tf2_msgs.msg import TFMessage
     from sensor_msgs.msg import LaserScan
     from std_msgs.msg import Bool
@@ -41,10 +42,13 @@ def run(args):
         raise RuntimeError('Run relocalize on the Linux robot with ROS sourced')
     state = load_state(args.root)
     revision = profile_dir(state['active_profile'], args.root) / 'current'
-    for name in ('map.posegraph', 'map.data', 'grid/map.yaml'):
+    for name in ('map.posegraph', 'map.data'):
         if not (revision/name).is_file():
-            raise RuntimeError('Selected profile needs a posegraph and grid from save --with-grid')
-    original_revision = [(revision/name).stat().st_mtime_ns for name in ('map.posegraph', 'map.data', 'grid/map.yaml')]
+            raise RuntimeError('Selected profile needs saved map.posegraph and map.data files')
+    def revision_identity():
+        return [(revision/name).stat().st_mtime_ns if (revision/name).exists() else None
+                for name in ('map.posegraph', 'map.data', 'grid/map.yaml')]
+    original_revision = revision_identity()
     args.root.mkdir(parents=True, exist_ok=True)
     # Prevent two operators from racing through the discovery preflight.
     import fcntl
@@ -64,7 +68,7 @@ def run(args):
     values = {'odom': None, 'odom_at': -math.inf, 'scan_at': -math.inf,
               'heading': False, 'heading_at': -math.inf, 'amcl': None,
               'amcl_at': -math.inf, 'amcl_min_stamp': -math.inf, 'slam': None, 'slam_at': -math.inf,
-              'still_since': None, 'accepted': None, 'searching': False}
+              'still_since': None, 'accepted': None, 'searching': False, 'map_ready': False}
 
     tf_sources = {}
 
@@ -116,7 +120,7 @@ def run(args):
     def checked_state():
         current = load_state(args.root)
         if (current['active_profile'] != state['active_profile'] or current['mode'] != state['mode'] or
-                original_revision != [(revision/name).stat().st_mtime_ns for name in ('map.posegraph', 'map.data', 'grid/map.yaml')]):
+                original_revision != revision_identity()):
             raise RuntimeError('Selected profile, mode or map revision changed during relocalization')
         return current
 
@@ -144,6 +148,9 @@ def run(args):
         return response
 
     subscriptions = [
+        node.create_subscription(OccupancyGrid, '/map',
+            lambda msg: values.update(map_ready=bool(msg.info.width and msg.info.height and msg.data)),
+            QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)),
         node.create_subscription(TFMessage, "/tf", transforms, 100),
         node.create_subscription(Odometry, '/odometry/filtered', odom, 10),
         node.create_subscription(Bool, '/odometry/heading_ready', heading, 1),
@@ -191,7 +198,8 @@ def run(args):
             raise RuntimeError('Unexpected lifecycle state: '+name)
 
     def spawn(package, executable, params):
-        stream = (directory/(executable+'.log')).open('w')
+        log_name = 'grid_renderer' if params.name == 'render.yaml' else executable
+        stream = (directory/(log_name+'.log')).open('w')
         streams.append(stream)
         child = subprocess.Popen(['ros2', 'run', package, executable, '--ros-args',
                                   '--params-file', str(params)], stdout=stream,
@@ -249,6 +257,36 @@ def run(args):
             raise RuntimeError('Stop existing navigation/localization nodes first: '+', '.join(sorted(conflicts)))
         wait(healthy, 10., 'Fresh scan, heading and filtered odometry required')
         shutil.copytree(revision, directory/'revision')
+        if not (directory/'revision/grid/map.yaml').is_file():
+            if (revision/'grid').exists():
+                raise RuntimeError('Incomplete grid directory already exists: '+str(revision/'grid'))
+            values['map_ready'] = False
+            status('EXPORTING_GRID: rendering occupancy grid from the saved posegraph; live scans and TF publication disabled')
+            render_config = yaml.safe_load((Path(get_package_share_directory('slam_toolbox'))/
+                                           'config/mapper_params_localization.yaml').read_text())
+            render_config['slam_toolbox']['ros__parameters'].update(
+                use_sim_time=False, map_file_name=str(directory/'revision/map'),
+                map_start_pose=[0.0, 0.0, 0.0], map_start_at_dock=False,
+                scan_topic='/armatron/relocalize/disabled_scan',
+                transform_publish_period=0.0, map_update_interval=0.2)
+            render_params = directory/'render.yaml'
+            render_params.write_text(yaml.safe_dump(render_config))
+            renderer = spawn('slam_toolbox', 'localization_slam_toolbox_node', render_params)
+            wait(lambda: values['map_ready'], 30., 'Saved posegraph did not produce an occupancy grid')
+            export_grid(directory/'revision/grid', 20.)
+            stop(renderer)
+            wait(lambda: 'slam_toolbox' not in node.get_node_names(), 10., 'Grid renderer did not stop')
+            checked_state()
+            # Grid-only migration preserves posegraph bytes and the previous revision.
+            destination = revision/'grid'
+            if destination.exists():
+                raise RuntimeError('Incomplete grid directory already exists: '+str(destination))
+            staging_grid = revision/('.grid-'+uuid.uuid4().hex)
+            shutil.copytree(directory/'revision/grid', staging_grid)
+            staging_grid.replace(destination)
+            original_revision = revision_identity()
+            status('GRID_SAVED: existing profile is now ready for AMCL recovery')
+            wait(healthy, 10., 'Waiting for fresh odometry after grid export')
         config = yaml.safe_load((Path(get_package_share_directory('armatron'))/
                                  'config/nav2/navigation.yaml').read_text())
         config['amcl']['ros__parameters'].update(set_initial_pose=True, initial_pose={'x': 0.0, 'y': 0.0, 'z': 0.0, 'yaw': 0.0}, tf_broadcast=True)

@@ -25,7 +25,8 @@ class MapSaveTest(unittest.TestCase):
                     (profile / '.staging/map.data').write_text('new data')
                 return SimpleNamespace(returncode=code, stdout=output, stderr='')
 
-            with patch('armatron.map_manager.subprocess.run', side_effect=serialize):
+            with patch('armatron.map_manager.subprocess.run', side_effect=serialize), \
+                 patch('armatron.map_manager.export_grid'):
                 if success:
                     command_save(SimpleNamespace(root=root, timeout=20))
                     self.assertEqual((current / 'map.data').read_text(), 'new data')

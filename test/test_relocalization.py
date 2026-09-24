@@ -46,7 +46,7 @@ class RelocalizationTest(unittest.TestCase):
         self.assertEqual(args.func.__name__, 'command_relocalize')
 
 class OrchestrationTest(unittest.TestCase):
-    def exercise(self, bad_slam=False, competing=False, existing_tf=False, transient_tf=False, bad_tf=False, lost_heading=False, save_failure=False):
+    def exercise(self, bad_slam=False, competing=False, existing_tf=False, transient_tf=False, bad_tf=False, lost_heading=False, save_failure=False, missing_grid=False, export_failure=False):
         import tempfile
         from pathlib import Path
         from unittest.mock import patch
@@ -110,6 +110,11 @@ class OrchestrationTest(unittest.TestCase):
                 self.active = True
                 self.started = clock[0]
                 self.executable = command[3]
+                if Path(command[-1]).name == 'render.yaml':
+                    self.executable = 'grid_renderer'
+                    params = yaml.safe_load(Path(command[-1]).read_text())['slam_toolbox']['ros__parameters']
+                    assert params['transform_publish_period'] == 0.
+                    assert params['scan_topic'] == '/armatron/relocalize/disabled_scan'
                 children.append(self)
                 events.append('start:'+self.executable)
             def poll(self): return None if self.active else 0
@@ -130,6 +135,8 @@ class OrchestrationTest(unittest.TestCase):
             callbacks['/odometry/filtered'](NS(twist=NS(twist=NS(linear=NS(x=0., y=0.), angular=NS(z=0.)))))
             callbacks['/scan'](None)
             for child in children:
+                if child.active and child.executable == 'grid_renderer':
+                    callbacks['/map'](NS(info=NS(width=1, height=1), data=[0]))
                 if child.active and child.executable in ('amcl', 'localization_slam_toolbox_node'):
                     is_slam = child.executable != 'amcl'
                     msg = pose(x=3. if bad_slam and is_slam else 0.)
@@ -146,10 +153,19 @@ class OrchestrationTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             revision = root/'maps/test/current'
-            (revision/'grid').mkdir(parents=True)
-            for name in ('map.posegraph', 'map.data', 'grid/map.pgm'):
+            revision.mkdir(parents=True)
+            for name in ('map.posegraph', 'map.data'):
                 (revision/name).write_bytes(b'test artifact')
-            (revision/'grid/map.yaml').write_text('image: map.pgm\n')
+            def grid_export(directory, timeout):
+                events.append('export_grid')
+                if export_failure:
+                    raise RuntimeError('Grid export failed')
+                directory.mkdir()
+                (directory/'map.pgm').write_bytes(b'grid image')
+                (directory/'map.yaml').write_text('image: map.pgm\n')
+            if not missing_grid:
+                grid_export(revision/'grid', 20.)
+                events.clear()
             share = root/'share'
             (share/'config/nav2').mkdir(parents=True)
             (share/'config/nav2/navigation.yaml').write_text('amcl:\n  ros__parameters: {}\n')
@@ -158,9 +174,9 @@ class OrchestrationTest(unittest.TestCase):
             modules = {
                 'rclpy': NS(init=lambda: None, shutdown=lambda: None, ok=lambda: True, spin_once=spin),
                 'rclpy.node': NS(Node=Node), 'rclpy.time': NS(Time=NS(from_msg=lambda m: m)),
-                'rclpy.qos': NS(qos_profile_sensor_data=1),
+                'rclpy.qos': NS(qos_profile_sensor_data=1, QoSProfile=lambda **kw: kw, DurabilityPolicy=NS(TRANSIENT_LOCAL=1)),
                 'geometry_msgs.msg': NS(PoseWithCovarianceStamped=Message),
-                'nav_msgs.msg': NS(Odometry=Message), 'sensor_msgs.msg': NS(LaserScan=Message),
+                'nav_msgs.msg': NS(Odometry=Message, OccupancyGrid=Message), 'sensor_msgs.msg': NS(LaserScan=Message),
                 'tf2_msgs.msg': NS(TFMessage=Message), 'std_msgs.msg': NS(Bool=Message),
                 'std_srvs.srv': NS(Empty=Service, Trigger=Service),
                 'lifecycle_msgs.srv': NS(ChangeState=Service, GetState=Service),
@@ -172,10 +188,11 @@ class OrchestrationTest(unittest.TestCase):
             with patch.dict(sys.modules, modules), patch.object(recovery, 'os', NS(name='posix', killpg=killpg)), \
                  patch.object(recovery.time, 'monotonic', side_effect=lambda: clock[0]), \
                  patch.object(recovery.subprocess, 'Popen', side_effect=Child), \
+                 patch.object(recovery, 'export_grid', side_effect=grid_export), \
                  patch.object(recovery, 'save_state', side_effect=OSError('read-only') if save_failure else save_state):
-                if bad_slam or competing or existing_tf or bad_tf or lost_heading or save_failure:
+                if bad_slam or competing or existing_tf or bad_tf or lost_heading or save_failure or export_failure:
                     with self.assertRaises(RuntimeError): recovery.run(args)
-                    if competing or existing_tf or save_failure:
+                    if competing or existing_tf or save_failure or export_failure:
                         self.assertEqual(load_state(root)['mode'], 'mapping')
                         self.assertIsNone(load_state(root)['last_pose'])
                     else:
@@ -186,6 +203,10 @@ class OrchestrationTest(unittest.TestCase):
                     self.assertEqual(load_state(root)['mode'], 'localization')
                     self.assertEqual(load_state(root)['last_pose']['x'], 0.)
             self.assertTrue(all(not c.active for c in children))
+            for name in ('map.posegraph', 'map.data'):
+                self.assertEqual((revision/name).read_bytes(), b'test artifact')
+            if missing_grid:
+                self.assertEqual((revision/'grid/map.yaml').is_file(), not export_failure)
             return events
 
     def test_amcl_stops_before_slam_and_verified_pose_is_saved(self):
@@ -216,3 +237,12 @@ class OrchestrationTest(unittest.TestCase):
         events = self.exercise(save_failure=True)
         self.assertNotIn('accepted_saved', events)
         self.assertNotIn('start:localization_slam_toolbox_node', events)
+
+    def test_missing_grid_generated_before_amcl_without_changing_graph(self):
+        events = self.exercise(missing_grid=True)
+        self.assertLess(events.index('export_grid'), events.index('stop:grid_renderer'))
+        self.assertLess(events.index('stop:grid_renderer'), events.index('start:amcl'))
+
+    def test_grid_export_failure_preserves_profile_and_cleans_up(self):
+        events = self.exercise(missing_grid=True, export_failure=True)
+        self.assertNotIn('start:amcl', events)

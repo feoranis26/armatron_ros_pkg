@@ -8,12 +8,20 @@ validated on the robot. Dock machinery is not involved.
 
 ## Run on x86
 
-Sync/rebuild the package. If the profile does not already have a grid, while its
-mapping session is running save the paired artifacts:
+Sync/rebuild the package. Mapping saves now include both the posegraph and
+occupancy grid by default:
 
 ```bash
-ros2 run armatron armatron-map save --with-grid
+ros2 run armatron armatron-map save
 ```
+
+`--with-grid` remains accepted for compatibility. For an older profile with no
+grid, `relocalize` renders one from a snapshot of its saved posegraph before
+starting AMCL. This temporary SLAM process receives no live scans and publishes
+no TF. A successful export adds only the grid to the existing revision; the
+posegraph and previous revision remain unchanged. Failed exports leave the
+profile unchanged and stop the command. An existing incomplete grid is reported
+for inspection rather than overwritten.
 
 Then stop normal navigation (also stop any manually launched copy). Leave hardware,
 drive bridge and odometry services running:
