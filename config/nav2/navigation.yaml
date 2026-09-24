@@ -209,13 +209,13 @@ controller_server:
     FollowPath:
       plugin: "dwb_core::DWBLocalPlanner"
       debug_trajectory_details: True
-      min_vel_x: -0.5
+      min_vel_x: -0.3
       min_vel_y: -0.05
-      max_vel_x: 0.5
+      max_vel_x: 0.3
       max_vel_y: 0.05
       max_vel_theta: 1.0
       min_speed_xy: 0.0
-      max_speed_xy: 0.5
+      max_speed_xy: 0.3
       min_speed_theta: 0.0
       acc_lim_x: 0.25
       acc_lim_y: 0.25
@@ -238,11 +238,14 @@ controller_server:
       critics: ["RotateToGoal", "Oscillation", "ObstacleFootprint", "GoalAlign", "PathAlign", "PathDist", "GoalDist"]
       ObstacleFootprint.scale: 0.02
       PathAlign.scale: 32.0
-      GoalAlign.scale: 24.0
+      GoalAlign.scale: 12.0
       PathAlign.forward_point_distance: 0.15
       GoalAlign.forward_point_distance: 0.15
-      PathDist.scale: 32.0
-      GoalDist.scale: 24.0
+      # Penalize excursions throughout the rollout, not just its endpoint.
+      # Sum is sample-count dependent, so use a lower per-point weight.
+      PathDist.aggregation_type: "sum"
+      PathDist.scale: 8.0
+      GoalDist.scale: 16.0
       RotateToGoal.scale: 32.0
       Oscillation.scale: 1.0
       RotateToGoal.slowing_factor: 5.0
