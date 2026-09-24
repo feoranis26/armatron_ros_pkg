@@ -61,10 +61,16 @@ class ArmatronDrive(Node):
         self.odom_publisher = self.create_publisher(Odometry, "/odom/drive_raw", 10)
         self.gyro_status_publisher = self.create_publisher(String, '/gyro/status', 10)
         self.gyro_imu_publisher = self.create_publisher(Imu, '/imu/gyro', 10)
+        self.gyro_raw_publisher = self.create_publisher(Float64, '/gyro/raw_heading_degrees', 10)
+        self.last_raw_gyro_at = None
+        self.gyro_valid_publisher = self.create_publisher(Bool, '/gyro/heading_valid', 1)
+        self.last_gyro_rejections = 0
         # Initial uncertainty assumption (~2.9 degree standard deviation), not
         # a claim of measured BNO accuracy. Keep configurable for validation.
         self.gyro_imu = GyroImuAdapter(
-            self.declare_parameter('gyro_yaw_variance', 0.0025).value, Imu)
+            self.declare_parameter('gyro_yaw_variance', 0.0025).value, Imu,
+            self.declare_parameter('gyro_max_yaw_rate', 4.0).value,
+            self.declare_parameter('gyro_jump_slack', 0.1).value)
         self.create_subscription(Odometry, '/odometry/filtered', self.on_filtered_odom, 1)
         self.motion_blocked = True
         self.gyro_was_fresh = None
@@ -121,9 +127,24 @@ class ArmatronDrive(Node):
 
     def tick(self):
         now = time.monotonic()
+        raw = self.gyro.sample
+        if raw is not None and raw[1] != self.last_raw_gyro_at:
+            self.gyro_raw_publisher.publish(Float64(data=float(raw[0])))
+            self.last_raw_gyro_at = raw[1]
+        imu = self.gyro_imu.message(
+            self.gyro.sample, time.monotonic(),
+            self.get_clock().now().to_msg(), self.base_frame_id)
+        if imu is not None:
+            self.heading = self.gyro_imu.yaw
+            self.gyro_imu_publisher.publish(imu)
+
+        self.gyro_valid_publisher.publish(Bool(data=bool(self.gyro_imu.tracking_valid)))
+        if self.gyro_imu.rejections != self.last_gyro_rejections:
+            self.get_logger().error('Gyro angle discontinuity rejected; drive and heading processing paused while sensor settles')
+            self.last_gyro_rejections = self.gyro_imu.rejections
         # Sensor loss is not an odometry disagreement: without heading neither
         # navigation nor hold-heading commands are safe to execute.
-        gyro_fresh = self.gyro.angle is not None
+        gyro_fresh = self.gyro.angle is not None and self.gyro_imu.tracking_valid
         guard_ready = self.heading_ready and now-self.heading_ready_at <= 0.3
         if not gyro_fresh or not guard_ready:
             self.set_speed(Twist())
@@ -148,13 +169,6 @@ class ArmatronDrive(Node):
         self.motion_blocked = blocked
         if time.time() - self.lastSpeedReceived > 1:
             self.set_speed(Twist())
-
-        imu = self.gyro_imu.message(
-            self.gyro.sample, time.monotonic(),
-            self.get_clock().now().to_msg(), self.base_frame_id)
-        if imu is not None:
-            self.heading = self.gyro_imu.yaw
-            self.gyro_imu_publisher.publish(imu)
 
         #quat = self.imu.quaternion
         quaternion = Quaternion()
@@ -215,7 +229,7 @@ class ArmatronDrive(Node):
     def print_status(self):
         fresh = self.gyro.angle is not None
         self.gyro_status_publisher.publish(String(data=(
-            'OK' if fresh else 'STALE: no valid gyro angle within 1 second; drive blocked')))
+            ('OK' if self.gyro_imu.tracking_valid else 'REJECTED: gyro heading discontinuity; recovering') if fresh else 'STALE: no valid gyro angle within 1 second; drive blocked')))
         now = time.monotonic()
         if not fresh and now - self.last_gyro_warning >= 5.0:
             self.get_logger().error(

@@ -53,8 +53,15 @@ class HeadingGuard(Node):
         self.toggle = self.create_client(ToggleFilterProcessing, '/toggle')
         self.set_pose = self.create_client(SetPose, '/set_pose')
         self.create_subscription(Imu, '/imu/gyro', self.on_imu, 10)
+        self.create_subscription(Bool, '/gyro/heading_valid', self.on_validity, 1)
         self.create_subscription(Odometry, '/odometry/filtered', self.on_odom, 1)
         self.create_timer(0.05, self.tick)
+
+    def on_validity(self, msg):
+        if not msg.data:
+            self.watchdog.received = None
+            self.watchdog.healthy_since = None
+            self.ready_pub.publish(Bool(data=False))
 
     def on_odom(self, msg):
         if msg.header.frame_id == 'odom':

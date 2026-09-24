@@ -72,7 +72,8 @@ validated. Add `/imu/gyro` to diagnostic bag recordings.
 
 Gyro transport health is published by the x86 bridge on `/gyro/status`. Missing
 or invalid angle packets for one second produce STALE status and a journal
-error every five seconds; raw pose heading is held at its last value (zero
+error every five seconds. Implausible fresh angle jumps are rejected and logged;
+`/gyro/raw_heading_degrees` exposes the uncorrected input for diagnosis. Local pose heading is held at its last value (zero
 before the first reading). The Pi gyro service fails if either worker exits or
 five seconds pass without a valid sensor reading, including before a client
 connects. Its existing `Restart=no` policy leaves failures visible for diagnosis.

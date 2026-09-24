@@ -55,7 +55,11 @@ class DriveSafetyTest(unittest.TestCase):
         node.heading_ready = True
         node.heading_ready_at = 100.
         node.heading_seen = True
-        node.gyro_imu = Mock()
+        node.gyro_imu = Mock(tracking_valid=True, rejections=0)
+        node.gyro_valid_publisher = Mock()
+        node.gyro_raw_publisher = Mock()
+        node.last_raw_gyro_at = None
+        node.last_gyro_rejections = 0
         node.gyro_imu.message.return_value = None
         node.get_clock = Mock(return_value=Mock())
         node.get_logger = Mock(return_value=Mock())
@@ -70,6 +74,18 @@ class DriveSafetyTest(unittest.TestCase):
         with patch('time.monotonic', return_value=100.), patch('time.time', return_value=100.):
             node.tick()  # No motion-consistency heartbeat required.
             node.driver.drive.assert_called_with(0.4, 0.2, 0.1)
+            node.gyro.sample = (120., 100.)
+            node.gyro_imu.tracking_valid = False
+            node.gyro_imu.rejections = 1
+            node.tick()  # Fresh UDP packets with invalid heading still stop immediately.
+            node.driver.drive.assert_called_with(0., 0., 0.)
+            node.gyro_raw_publisher.publish.assert_called_once()
+            self.assertEqual(node.gyro_raw_publisher.publish.call_args.args[0].data, 120.)
+            node.get_logger().error.assert_called()
+            self.assertIsNone(node.inhibit_requested)  # No persistent latch.
+            node.gyro_imu.tracking_valid = True
+            node.tick()
+            node.gyro_raw_publisher.publish.assert_called_once()  # No duplicate raw packet.
             node.on_safety_stop(None, None)
             node.tick()
             node.driver.drive.assert_called_with(0., 0., 0.)

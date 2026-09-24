@@ -20,9 +20,18 @@ The bridge publishes gyro yaw in a continuous local reference, so EKF
 `imu0_relative` is false. The first gyro sample establishes zero heading (or the
 latest filtered heading available when the bridge starts). After a packet gap
 longer than one second, the first returning angle is rebased to the last heading;
-subsequent changes are measured normally. A sensor-origin change without a packet
-gap is not detected. Physical rotation during a missing-data interval cannot be
-reconstructed; verify/reinitialize global localization if the robot was moved.
+subsequent changes are measured normally.
+
+Fresh packets are also checked for implausible angle changes. The bridge rejects
+wrapped yaw increments larger than `gyro_max_yaw_rate * dt + gyro_jump_slack`
+(defaults 4 rad/s and 0.1 rad), withholds the IMU sample, blocks drive output and
+signals the heading guard immediately. Normal 359-to-0 wrapping is accepted.
+After at least three coherent samples spanning 0.3 seconds, the new sensor
+reference is rebased to the last accepted heading; ordinary automatic EKF
+recovery follows. This is a plausibility check, not an independent measurement:
+slow drift or a jump within the limit can still pass. Physical rotation during
+an outage or rejected interval cannot be reconstructed; verify/reinitialize
+global localization if the robot was moved.
 
 Blocked commands and hold-heading targets are discarded, including commands
 received during the interruption. Driving requires a new command after readiness
@@ -50,3 +59,26 @@ during the outage, no recovery yaw jump and no stale drive command. Verify a new
 teleop command works. Separately confirm explicit safety stops survive gyro
 recovery. Automated tests cover these control paths; actual ROS service behavior
 and hardware timing still need deployment validation.
+
+## Distinguishing gyro resets from SLAM corrections
+
+The Pi service being active proves neither angle accuracy nor localization
+accuracy. The x86 drive bridge logs rejected discontinuities and publishes
+`/gyro/status` plus `/gyro/heading_valid`. `/gyro/raw_heading_degrees` contains
+new raw UDP samples, before sign conversion, unwrapping or reset rebasing.
+It is an unstamped Float64; bag receipt time supplies diagnostic timing.
+
+Record the following on x86 before reproducing a jump (stop recording with Ctrl+C):
+
+```bash
+ros2 bag record -o heading_jump /gyro/raw_heading_degrees /gyro/heading_valid /gyro/status /imu/gyro /odometry/filtered /odometry/heading_ready /odometry/heading_status /pose /tf /tf_static /scan
+```
+
+A raw angle jump implicates the sensor/transport heading stream. An IMU or local
+odom jump with a continuous raw angle implicates downstream heading/fusion.
+Continuous local odometry with a jumping `map -> odom` points to global SLAM
+correction. SLAM does not change the raw gyro reading. This guard does not detect
+or reject an incorrect SLAM correction, and it does not cancel a navigation goal.
+Mapping mode can add misaligned observations after a localization error; use
+localization mode for navigation on an established map to avoid extending its
+saved posegraph. That does not itself make localization corrections reliable.

@@ -139,3 +139,19 @@ class HeadingGuardTest(unittest.TestCase):
         with patch('time.monotonic', return_value=10.4):
             node.on_scan_received(None)
         node.scan_publisher.publish.assert_not_called()
+
+    def test_rejected_heading_closes_gate_without_waiting_for_timeout(self):
+        module = load('heading_guard')
+        node = module.HeadingGuard.__new__(module.HeadingGuard)
+        node.watchdog = module.HeadingWatchdog(0.)
+        node.watchdog.sample(10., 10., 10.)
+        node.watchdog.sample(10.4, 10.4, 10.4)
+        self.assertTrue(node.watchdog.ready(10.4))
+        node.ready_pub = Mock()
+        node.on_validity(NS(data=False))
+        self.assertFalse(node.watchdog.ready(10.4))
+        self.assertFalse(node.ready_pub.publish.call_args.args[0].data)
+        node.watchdog.sample(10.5, 10.5, 10.5)
+        self.assertFalse(node.watchdog.ready(10.5))
+        node.watchdog.sample(10.9, 10.9, 10.9)
+        self.assertTrue(node.watchdog.ready(10.9))
