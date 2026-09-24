@@ -79,8 +79,14 @@ is stopped. Keep the robot stationary and start normal navigation:
 sudo systemctl start armatron-navigation.service
 ```
 
-Normal navigation now explicitly starts `localization_slam_toolbox_node` and
-Nav2's navigation-only launch. It does not route localization through Humble's
+Normal navigation explicitly starts `localization_slam_toolbox_node`, a lifecycle
+map server for the saved grid, and Nav2's navigation-only launch. The map server
+owns `/map`; SLAM's changing grid is published at
+`/slam_toolbox/localization_map` for diagnostics. SLAM remains the sole
+`map -> odom` TF owner; the map server publishes no TF. Live obstacles still
+update both costmaps. Localization uses a three-scan buffer and refreshes its
+diagnostic grid every five seconds. A profile without a grid must first run
+`relocalize` to generate it from the saved graph. It does not route localization through Humble's
 `bringup_launch.py` with `slam=True`: that route selects the synchronous mapping
 executable regardless of the YAML mode string. Mapping and legacy AMCL retain
 their existing bringup paths. Localization runs Nav2 without composition so it
@@ -153,3 +159,20 @@ loading large posegraphs.
 Upstream references: [Humble Nav2 SLAM launch](https://github.com/ros-navigation/navigation2/blob/humble/nav2_bringup/launch/slam_launch.py),
 [dedicated localization implementation](https://github.com/SteveMacenski/slam_toolbox/blob/humble/src/slam_toolbox_localization.cpp),
 [scan-matcher defaults](https://github.com/SteveMacenski/slam_toolbox/blob/humble/config/mapper_params_localization.yaml).
+
+## Handoff scheduling gaps
+
+Gyro transport status alone is insufficient: handoff also checks the heading-ready
+heartbeat, filtered odometry, scans and stationarity. These are now reported
+individually, with data ages, in `HANDOFF_WAIT` messages. A brief freshness gap
+waits within the existing stage deadline instead of immediately aborting. Waits
+before and after AMCL shutdown allow five seconds; SLAM startup allows 15 seconds
+and pose/TF verification allows 30 seconds. Deadlines do not extend on each gap.
+
+A data gap clears the passing verification sequence; three matching samples over
+one second must accumulate again after fresh stationary data returns. Freshness
+and pose agreement thresholds are unchanged. Odometry reporting motion after
+acceptance still aborts, now with the measured vx, vy and yaw rate. This is
+reported motion, not proof of physical motion: implausible odometry readings need
+separate investigation. The accepted pose remains saved on failure. The bootstrap
+now uses the same TF restamping policy and localization buffer size as navigation.

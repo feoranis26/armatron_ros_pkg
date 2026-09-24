@@ -56,7 +56,7 @@ slam_toolbox:
     transform_timeout: 0.5
     scan_topic: /scan
     map_update_interval: 1.0
-    scan_buffer_size: 1000
+    scan_buffer_size: 10  # Mapping history; localization launch overrides this to 3.
     do_loop_closing: true
     coarse_search_angle_offset: 0.349  # Radians: approximately 20 degrees (upstream default).
     use_response_expansion: true
@@ -72,7 +72,8 @@ bt_navigator:
     robot_base_frame: base_link
     odom_topic: /odometry/filtered
     bt_loop_duration: 10
-    default_server_timeout: 20
+    # Milliseconds for action acknowledgement and service responses, not seconds.
+    default_server_timeout: 1000
     # navigation.launch.py overrides BOTH default BT files with our no-backup
     # trees. Humble loads both during activation, even for single-goal use.
     # Humble RewrittenYaml only replaces existing keys.
@@ -190,7 +191,7 @@ controller_server:
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
-    failure_tolerance: 0.3
+    failure_tolerance: 1.0  # Seconds of zero-command retries before controller recovery.
     progress_checker_plugin: "progress_checker"
     goal_checker_plugins: ["precise_goal_checker"] # "general_goal_checker"
     controller_plugins: ["FollowPath"]

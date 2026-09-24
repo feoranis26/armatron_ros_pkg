@@ -38,6 +38,10 @@ def generate_launch_description():
         raise RuntimeError(
             f'Profile {active_profile!r} has no saved posegraph. Select mapping mode to create one.')
 
+    if localization and not grid_file.is_file():
+        raise RuntimeError('Localization needs the saved grid. Run armatron-map relocalize '
+                           'with navigation stopped to generate it from the saved graph.')
+
     params = RewrittenYaml(
         source_file=PathJoinSubstitution([
             FindPackageShare('armatron'), 'config', 'nav2', 'navigation.yaml'
@@ -84,13 +88,25 @@ def generate_launch_description():
         localization_nodes.append(Node(
             package='slam_toolbox', executable='localization_slam_toolbox_node',
             name='slam_toolbox', output='screen',
-            parameters=[params, {'enable_interactive_mode': False}],
+            parameters=[params, {
+                'enable_interactive_mode': False, 'use_map_saver': False,
+                'map_name': '/slam_toolbox/localization_map',
+                'scan_buffer_size': 3, 'map_update_interval': 5.0,
+                'base_frame': 'base_link', 'odom_frame': 'odom', 'map_frame': 'map',
+            }],
         ))
+        localization_nodes.extend([
+            Node(package='nav2_map_server', executable='map_server', name='map_server',
+                 output='screen', parameters=[{'yaml_filename': str(grid_file), 'use_sim_time': False}]),
+            Node(package='nav2_lifecycle_manager', executable='lifecycle_manager',
+                 name='lifecycle_manager_map', output='screen',
+                 parameters=[{'use_sim_time': False, 'autostart': True, 'node_names': ['map_server']}]),
+        ])
     nav_arguments = {
         'params_file': params, 'use_sim_time': 'false',
     }
     if localization:
-        # Launch navigation alone: neither another SLAM node nor AMCL/map_server.
+        # Launch navigation alone; this file owns the localizer and fixed map server.
         nav_arguments.update(use_composition='False', autostart='True')
     else:
         nav_arguments.update(map=LaunchConfiguration('map'),

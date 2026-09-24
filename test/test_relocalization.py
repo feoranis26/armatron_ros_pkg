@@ -46,7 +46,7 @@ class RelocalizationTest(unittest.TestCase):
         self.assertEqual(args.func.__name__, 'command_relocalize')
 
 class OrchestrationTest(unittest.TestCase):
-    def exercise(self, bad_slam=False, competing=False, existing_tf=False, transient_tf=False, bad_tf=False, lost_heading=False, save_failure=False, missing_grid=False, export_failure=False):
+    def exercise(self, bad_slam=False, competing=False, existing_tf=False, transient_tf=False, bad_tf=False, lost_heading=False, save_failure=False, missing_grid=False, export_failure=False, transient_gap=False, motion=False, missing_scan=False):
         import tempfile
         from pathlib import Path
         from unittest.mock import patch
@@ -131,9 +131,16 @@ class OrchestrationTest(unittest.TestCase):
             callbacks['/tf'](NS(transforms=[NS(
                 header=NS(frame_id='map' if existing_tf else 'odom'),
                 child_frame_id='odom' if existing_tf else 'base_link')]))
-            callbacks['/odometry/heading_ready'](NS(data=not (lost_heading and 'accepted_saved' in events)))
-            callbacks['/odometry/filtered'](NS(twist=NS(twist=NS(linear=NS(x=0., y=0.), angular=NS(z=0.)))))
-            callbacks['/scan'](None)
+            slam = next((c for c in children if c.executable == 'localization_slam_toolbox_node'), None)
+            gap = transient_gap and slam and .2 < clock[0]-slam.started < 1.2
+            if gap:
+                events.append('data_gap')
+            else:
+                callbacks['/odometry/heading_ready'](NS(data=not (lost_heading and 'accepted_saved' in events)))
+                vx = .1 if motion and 'accepted_saved' in events else 0.
+                callbacks['/odometry/filtered'](NS(twist=NS(twist=NS(linear=NS(x=vx, y=0.), angular=NS(z=0.)))))
+                if not (missing_scan and 'accepted_saved' in events):
+                    callbacks['/scan'](None)
             for child in children:
                 if child.active and child.executable == 'grid_renderer':
                     callbacks['/map'](NS(info=NS(width=1, height=1), data=[0]))
@@ -190,8 +197,10 @@ class OrchestrationTest(unittest.TestCase):
                  patch.object(recovery.subprocess, 'Popen', side_effect=Child), \
                  patch.object(recovery, 'export_grid', side_effect=grid_export), \
                  patch.object(recovery, 'save_state', side_effect=OSError('read-only') if save_failure else save_state):
-                if bad_slam or competing or existing_tf or bad_tf or lost_heading or save_failure or export_failure:
-                    with self.assertRaises(RuntimeError): recovery.run(args)
+                if bad_slam or competing or existing_tf or bad_tf or lost_heading or save_failure or export_failure or motion or missing_scan:
+                    reason = ('odom reports vx' if motion else 'scan age=' if missing_scan
+                              else 'heading guard reports not ready' if lost_heading else '')
+                    with self.assertRaisesRegex(RuntimeError, reason): recovery.run(args)
                     if competing or existing_tf or save_failure or export_failure:
                         self.assertEqual(load_state(root)['mode'], 'mapping')
                         self.assertIsNone(load_state(root)['last_pose'])
@@ -246,3 +255,13 @@ class OrchestrationTest(unittest.TestCase):
     def test_grid_export_failure_preserves_profile_and_cleans_up(self):
         events = self.exercise(missing_grid=True, export_failure=True)
         self.assertNotIn('start:amcl', events)
+
+    def test_brief_data_gap_during_slam_verification_recovers(self):
+        events = self.exercise(transient_gap=True)
+        self.assertIn('data_gap', events)
+
+    def test_actual_motion_after_acceptance_still_fails(self):
+        self.exercise(motion=True)
+
+    def test_missing_scans_are_not_misreported_as_gyro_failure(self):
+        self.exercise(missing_scan=True)

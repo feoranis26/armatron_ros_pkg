@@ -77,11 +77,23 @@ class NavigationLaunchTest(unittest.TestCase):
             revision = root/'maps/test/current'
             revision.mkdir(parents=True)
             (revision/'map.posegraph').write_bytes(b'graph')
+            with self.assertRaisesRegex(RuntimeError, 'saved grid'):
+                module.generate_launch_description()
+            (revision/'grid').mkdir()
+            (revision/'grid/map.yaml').write_text('image: map.pgm')
             actions = module.generate_launch_description()
             localizers = [a for a in actions if a.kwargs.get('package') == 'slam_toolbox']
             self.assertEqual(len(localizers), 1)
             self.assertEqual(localizers[0].kwargs['executable'], 'localization_slam_toolbox_node')
-            self.assertFalse(localizers[0].kwargs['parameters'][1]['enable_interactive_mode'])
+            settings = localizers[0].kwargs['parameters'][1]
+            self.assertFalse(settings['enable_interactive_mode'])
+            self.assertEqual(settings['map_name'], '/slam_toolbox/localization_map')
+            self.assertEqual(settings['scan_buffer_size'], 3)
+            maps = [a for a in actions if a.kwargs.get('executable') == 'map_server']
+            self.assertEqual(len(maps), 1)
+            self.assertEqual(maps[0].kwargs['parameters'][0]['yaml_filename'], str(revision/'grid/map.yaml'))
+            manager = next(a for a in actions if a.kwargs.get('name') == 'lifecycle_manager_map')
+            self.assertEqual(manager.kwargs['parameters'][0]['node_names'], ['map_server'])
             includes = [a for a in actions if 'launch_arguments' in a.kwargs]
             self.assertEqual(len(includes), 1)
             self.assertTrue(includes[0].args[0].args[0].endswith('/navigation_launch.py'))

@@ -34,6 +34,7 @@ setup(
             'drive = armatron.drive_bridge:main',
             'scan_filter = armatron.scan_filter:main',
             'heading_guard = armatron.heading_guard:main',
+            'tf_timing = armatron.tf_timing:main',
             'lidar_demand = armatron.lidar_demand:main',
             'lidar_confidence = armatron.lidar_confidence:main',
             'gyro_pub = armatron.gyro_pub:main',

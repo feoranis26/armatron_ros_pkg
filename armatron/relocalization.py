@@ -68,7 +68,7 @@ def run(args):
     values = {'odom': None, 'odom_at': -math.inf, 'scan_at': -math.inf,
               'heading': False, 'heading_at': -math.inf, 'amcl': None,
               'amcl_at': -math.inf, 'amcl_min_stamp': -math.inf, 'slam': None, 'slam_at': -math.inf,
-              'still_since': None, 'accepted': None, 'searching': False, 'map_ready': False}
+              'still_since': None, 'motion_after_accept': None, 'verification_interrupted': False, 'accepted': None, 'searching': False, 'map_ready': False}
 
     tf_sources = {}
 
@@ -99,6 +99,11 @@ def run(args):
 
     def odom(msg):
         now = time.monotonic()
+        if values['accepted'] is not None and not stationary(msg):
+            v = msg.twist.twist
+            values['motion_after_accept'] = (
+                f'odom reports vx={v.linear.x:.3f}, vy={v.linear.y:.3f} m/s, '
+                f'wz={v.angular.z:.3f} rad/s after acceptance')
         if not stationary(msg) or now-values['odom_at'] > .5:
             values['still_since'] = None
         if stationary(msg) and values['still_since'] is None:
@@ -108,10 +113,24 @@ def run(args):
     def heading(msg):
         values['heading'], values['heading_at'] = msg.data, time.monotonic()
 
-    def healthy():
+    def health_problem():
         now = time.monotonic()
-        return (values['heading'] and now-values['heading_at'] < .3 and
-                now-values['odom_at'] < .5 and now-values['scan_at'] < 1.)
+        problems = []
+        for label, key, limit in (('heading-ready heartbeat', 'heading_at', .3),
+                                   ('filtered odometry', 'odom_at', .5),
+                                   ('scan', 'scan_at', 1.)):
+            age = now-values[key]
+            if age >= limit:
+                problems.append(f'{label} age={age:.2f}s (limit {limit:.2f}s)')
+        if not values['heading']:
+            problems.append('heading guard reports not ready (independent of gyro/status)')
+        return '; '.join(problems)
+
+    def healthy():
+        return not health_problem()
+
+    def handoff_problem():
+        return health_problem() or 'waiting for one second of stationary odometry'
 
     def still():
         return (healthy() and values['still_since'] is not None and
@@ -163,6 +182,7 @@ def run(args):
 
     def wait(predicate, timeout, reason, require_still=False):
         deadline = time.monotonic()+timeout
+        last_wait_log = -math.inf
         while rclpy.ok():
             rclpy.spin_once(node, timeout_sec=.05)
             if sum(name in ('amcl', 'slam_toolbox') for name in node.get_node_names()) > 1:
@@ -170,8 +190,20 @@ def run(args):
             for child in children:
                 if child.poll() is not None:
                     raise RuntimeError('Localization process exited; inspect '+str(directory))
+            if values['motion_after_accept']:
+                raise RuntimeError(values['motion_after_accept']+'; accepted AMCL pose retained')
             if require_still and not still():
-                raise RuntimeError('Motion or odometry interruption during handoff; accepted AMCL pose retained')
+                # Scheduling gaps are not evidence of motion. Keep spinning to
+                # collect all topics, but never count verification across a gap.
+                values['verification_interrupted'] = True
+                now = time.monotonic()
+                detail = handoff_problem()
+                if now-last_wait_log >= 1.:
+                    status('HANDOFF_WAIT: '+detail)
+                    last_wait_log = now
+                if now >= deadline:
+                    raise RuntimeError('Handoff data did not recover: '+detail)
+                continue
             if predicate():
                 return
             if time.monotonic() >= deadline:
@@ -340,8 +372,7 @@ def run(args):
         accepted = values['accepted']
         target = planar_pose(accepted)
         status('HANDOFF: accepted map pose '+str(target))
-        if not still():
-            raise RuntimeError('Robot must remain stationary for handoff')
+        wait(still, 5., handoff_problem, True)
         lifecycle('/amcl', 4, 2)
         stop(amcl_process)
         stop(map_process)
@@ -349,8 +380,7 @@ def run(args):
              10., 'AMCL/map server still visible after shutdown')
         tf_sources.clear()
         buffer.clear()  # Discard the previous owner's future-dated TF cache.
-        if not still():
-            raise RuntimeError('Motion during AMCL shutdown; retry')
+        wait(still, 5., handoff_problem, True)
         # Start with upstream complete localization defaults, then our profile.
         slam_config = yaml.safe_load((Path(get_package_share_directory('slam_toolbox'))/
                                       'config/mapper_params_localization.yaml').read_text())
@@ -358,7 +388,10 @@ def run(args):
             use_sim_time=False, map_file_name=str(directory/'revision/map'),
             map_start_pose=list(target), map_start_at_dock=False,
             scan_topic='/scan', odom_frame='odom', map_frame='map', base_frame='base_link',
-            minimum_travel_distance=0.0, minimum_travel_heading=0.0)
+            minimum_travel_distance=0.0, minimum_travel_heading=0.0,
+            restamp_tf=True, transform_publish_period=0.05, transform_timeout=0.5,
+            scan_buffer_size=3, map_update_interval=5.0, enable_interactive_mode=False,
+            mode='localization')
         slam_params = directory/'slam.yaml'
         slam_params.write_text(yaml.safe_dump(slam_config))
         spawn('slam_toolbox', 'localization_slam_toolbox_node', slam_params)
@@ -385,6 +418,9 @@ def run(args):
             return False
 
         def takeover():
+            if values['verification_interrupted']:
+                verified.clear()
+                values['verification_interrupted'] = False
             msg = values['slam']
             if msg is None:
                 return False
