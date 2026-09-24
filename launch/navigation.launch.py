@@ -25,6 +25,7 @@ def generate_launch_description():
     selected_profile = profile_dir(active_profile)
     map_file = selected_profile / 'current' / 'map'
     amcl = state['mode'] == 'amcl'
+    localization = state['mode'] == 'localization'
     grid_file = selected_profile / 'current' / 'grid' / 'map.yaml'
     if amcl and not grid_file.is_file():
         raise RuntimeError('AMCL needs a grid export. While mapping, run: '
@@ -75,6 +76,26 @@ def generate_launch_description():
         convert_types=True,
     )
 
+    # Humble bringup's slam=True always includes online_sync_launch.py.
+    # The localization executable implements a different scan-processing path;
+    # a YAML mode string cannot turn the mapping executable into that node.
+    localization_nodes = []
+    if localization:
+        localization_nodes.append(Node(
+            package='slam_toolbox', executable='localization_slam_toolbox_node',
+            name='slam_toolbox', output='screen',
+            parameters=[params, {'enable_interactive_mode': False}],
+        ))
+    nav_arguments = {
+        'params_file': params, 'use_sim_time': 'false',
+    }
+    if localization:
+        # Launch navigation alone: neither another SLAM node nor AMCL/map_server.
+        nav_arguments.update(use_composition='False', autostart='True')
+    else:
+        nav_arguments.update(map=LaunchConfiguration('map'),
+                             slam='False' if amcl else LaunchConfiguration('slam'))
+
     return LaunchDescription([
         DeclareLaunchArgument('holonomic', default_value='false'),
         DeclareLaunchArgument('slam', default_value='False' if amcl else 'True'),
@@ -90,15 +111,12 @@ def generate_launch_description():
             name='map_pose_persistence',
             parameters=[{'pose_topic': '/amcl_pose' if amcl else '/pose'}],
         ),
+        *localization_nodes,
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(PathJoinSubstitution([
-                FindPackageShare('nav2_bringup'), 'launch', 'bringup_launch.py'
+                FindPackageShare('nav2_bringup'), 'launch',
+                'navigation_launch.py' if localization else 'bringup_launch.py'
             ])),
-            launch_arguments={
-                'params_file': params,
-                'map': LaunchConfiguration('map'),
-                'slam': 'False' if amcl else LaunchConfiguration('slam'),
-                'use_sim_time': 'false',
-            }.items(),
+            launch_arguments=nav_arguments.items(),
         ),
     ])

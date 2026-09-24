@@ -65,3 +65,30 @@ class NavigationLaunchTest(unittest.TestCase):
             actions = module.generate_launch_description()
             pose_node = next(a for a in actions if a.kwargs.get('executable') == 'pose_persistence')
             self.assertEqual(pose_node.kwargs['parameters'], [{'pose_topic':'/pose'}])
+
+    def test_localization_owns_one_localizer_and_starts_navigation_only(self):
+        module = load_launch()
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'ARMATRON_STATE_DIR': directory}):
+            root = Path(directory)
+            save_state({'active_profile': 'test', 'mode': 'localization',
+                        'last_pose': {'x': 2., 'y': -1., 'yaw': .5}}, root)
+            with self.assertRaisesRegex(RuntimeError, 'no saved posegraph'):
+                module.generate_launch_description()
+            revision = root/'maps/test/current'
+            revision.mkdir(parents=True)
+            (revision/'map.posegraph').write_bytes(b'graph')
+            actions = module.generate_launch_description()
+            localizers = [a for a in actions if a.kwargs.get('package') == 'slam_toolbox']
+            self.assertEqual(len(localizers), 1)
+            self.assertEqual(localizers[0].kwargs['executable'], 'localization_slam_toolbox_node')
+            self.assertFalse(localizers[0].kwargs['parameters'][1]['enable_interactive_mode'])
+            includes = [a for a in actions if 'launch_arguments' in a.kwargs]
+            self.assertEqual(len(includes), 1)
+            self.assertTrue(includes[0].args[0].args[0].endswith('/navigation_launch.py'))
+            arguments = dict(includes[0].kwargs['launch_arguments'])
+            self.assertNotIn('slam', arguments)
+            self.assertNotIn('map', arguments)
+            self.assertEqual(arguments['use_composition'], 'False')
+            self.assertIs(localizers[0].kwargs['parameters'][0], arguments['params_file'])
+            rewrites = arguments['params_file'].kwargs['param_rewrites']
+            self.assertEqual(rewrites['slam_toolbox.ros__parameters.map_start_pose.0'], '2.0')

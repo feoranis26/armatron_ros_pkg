@@ -79,6 +79,13 @@ is stopped. Keep the robot stationary and start normal navigation:
 sudo systemctl start armatron-navigation.service
 ```
 
+Normal navigation now explicitly starts `localization_slam_toolbox_node` and
+Nav2's navigation-only launch. It does not route localization through Humble's
+`bringup_launch.py` with `slam=True`: that route selects the synchronous mapping
+executable regardless of the YAML mode string. Mapping and legacy AMCL retain
+their existing bringup paths. Localization runs Nav2 without composition so it
+does not depend on a container from the bypassed bringup launch.
+
 Normal slam_toolbox now loads that pose. Verify alignment before sending a goal.
 This first stage deliberately has a short no-map-TF interval between the bootstrap
 ending and normal navigation starting. Do not reset local odometry or move the
@@ -124,3 +131,25 @@ unchanged.
 If handoff fails after acceptance, the saved AMCL hint can seed a later normal
 localization startup. It is a pose at acceptance time, not proof that localization
 is currently ready; moving the robot afterward can make the hint stale.
+
+## Double walls
+
+Mapping mode adds observations and relies on scan matching and loop closures to
+align them. It does not automatically invoke our AMCL global search after a
+large pose error. Repetitive corridors or bad odometry can yield an incorrect
+match and duplicated structure. Localization uses a fixed saved graph and a
+rolling localization buffer; it still needs an adequate initial pose and cannot
+promise global recovery from every bad match. Use `relocalize` when the pose is
+lost, and inspect `/map` with costmap overlays disabled to distinguish graph
+artifacts from obstacle/inflation overlays.
+
+The coarse angle search setting has been corrected from 20.0 radians to the
+upstream 0.349 radians (approximately 20 degrees). The previous range spanned
+multiple revolutions. This correction does not repair duplicate walls already
+stored in a posegraph. Preserve a known-good map revision before further mapping.
+The launch also explicitly requests the upstream 40 MB stack allowance for
+loading large posegraphs.
+
+Upstream references: [Humble Nav2 SLAM launch](https://github.com/ros-navigation/navigation2/blob/humble/nav2_bringup/launch/slam_launch.py),
+[dedicated localization implementation](https://github.com/SteveMacenski/slam_toolbox/blob/humble/src/slam_toolbox_localization.cpp),
+[scan-matcher defaults](https://github.com/SteveMacenski/slam_toolbox/blob/humble/config/mapper_params_localization.yaml).

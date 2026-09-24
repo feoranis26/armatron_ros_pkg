@@ -50,6 +50,7 @@ slam_toolbox:
   ros__parameters:
     # map -> odom is the latest global correction, held between scan updates.
     # Scan-stamped repeats can expire at Nav2 while SLAM processes a large map.
+    stack_size_to_use: 40000000  # Required for loading large serialized posegraphs.
     restamp_tf: true
     transform_publish_period: 0.05
     transform_timeout: 0.5
@@ -57,7 +58,7 @@ slam_toolbox:
     map_update_interval: 1.0
     scan_buffer_size: 1000
     do_loop_closing: true
-    coarse_search_angle_offset: 20.0
+    coarse_search_angle_offset: 0.349  # Radians: approximately 20 degrees (upstream default).
     use_response_expansion: true
     mode: localization
     map_file_name: ""
