@@ -227,9 +227,11 @@ controller_server:
       vy_samples: 20
       vtheta_samples: 20
       sim_time: 1.7
-      # Sample translation at half a costmap cell and rotation at ~3 degrees.
-      linear_granularity: 0.025
-      angular_granularity: 0.05
+      # Use equal sample counts so summed path costs do not penalize turns
+      # merely for containing more samples. At the configured speed limits,
+      # 50 ms gives <=1.5 cm translation and <=0.05 rad rotation per step.
+      discretize_by_time: true
+      time_granularity: 0.05
       transform_tolerance: 0.2
       xy_goal_tolerance: 0.25
       trans_stopped_velocity: 0.25
@@ -242,7 +244,7 @@ controller_server:
       PathAlign.forward_point_distance: 0.15
       GoalAlign.forward_point_distance: 0.15
       # Penalize excursions throughout the rollout, not just its endpoint.
-      # Sum is sample-count dependent, so use a lower per-point weight.
+      # Equal-time sampling above keeps sample count consistent across candidates.
       PathDist.aggregation_type: "sum"
       PathDist.scale: 8.0
       GoalDist.scale: 16.0
