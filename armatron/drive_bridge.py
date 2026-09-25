@@ -221,9 +221,14 @@ class ArmatronDrive(Node):
         self.odom_update()
 
         if blocked:
-            self.driver.drive(0.0, 0.0, 0.0)
+            sent = self.driver.drive(0.0, 0.0, 0.0)
         else:
-            self.driver.drive(self.speed_x, self.speed_y, self.speed_th)
+            sent = self.driver.drive(self.speed_x, self.speed_y, self.speed_th)
+        if sent is False:
+            # Drop the current command; recovery needs fresh command input.
+            self.set_speed(Twist())
+            self.hold = 0.0
+            self.motion_blocked = True
         self.driver.update()
 
     def print_status(self):

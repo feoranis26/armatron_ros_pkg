@@ -241,6 +241,22 @@ The units intentionally use
 `Restart=no`; a failed process stays failed for diagnosis with `systemctl
 status` and `journalctl -u`.
 
+The x86 drive bridge also starts after `tailscaled.service`. Daemon startup and
+`network-online.target` do not guarantee that the Pi route is usable yet. The
+UDP bridge therefore retries connection/receive failures and drops failed sends
+without terminating on network/permission errors. It logs the endpoint and errno
+at most once every five seconds per operation/error. A failed drive send clears
+the current motion command; fresh telemetry, heading readiness and new command
+input are required to resume. Successful UDP sends alone do not prove delivery.
+Port conflicts still fail startup rather than silently using a different port.
+
+If LAN startup ordering is also needed, check `systemctl list-dependencies
+network-online.target`: it must include the wait-online service for the network
+manager actually in use (`NetworkManager-wait-online.service` or
+`systemd-networkd-wait-online.service`). The installer does not choose or enable
+a network manager. Persistent `Operation not permitted` errors after Tailscale is
+ready still require checking the route/firewall; retrying does not bypass it.
+
 The service paths assume `/home/feoranis/dev_ws`. Update
 `ARMATRON_WORKSPACE`, `User`, and `ExecStart` if the deployment path differs.
 

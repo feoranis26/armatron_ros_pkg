@@ -71,7 +71,7 @@ class WheelDriver(UDPDevice):
 
     def drive(self, x, y, theta):
         #print(f"whl {x * ROTS_PER_MPS} {-y * ROTS_PER_MPS} {theta * ROTS_PER_RADS_PS}")
-        self.send(f"whl {x * ROTS_PER_MPS} {-y * ROTS_PER_MPS} {theta * ROTS_PER_RADS_PS}")
+        return self.send(f"whl {x * ROTS_PER_MPS} {-y * ROTS_PER_MPS} {theta * ROTS_PER_RADS_PS}")
 
     def safety_stop(self):
         self.send("safety_stop")

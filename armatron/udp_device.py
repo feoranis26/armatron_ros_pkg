@@ -1,6 +1,15 @@
 import threading
 import time
 import socket
+import errno
+import logging
+
+
+# These can occur while interfaces, routes or firewall rules are coming up.
+# Programming errors and local bind conflicts must still surface as failures.
+NETWORK_ERRORS = {errno.EPERM, errno.EACCES, errno.ENETDOWN, errno.ENETUNREACH,
+                  errno.EHOSTUNREACH, errno.ECONNREFUSED, errno.ECONNRESET,
+                  errno.ENOBUFS, errno.EAGAIN, errno.ETIMEDOUT}
 
 def millis() -> float:
     return float(time.time_ns()) / 1000000.0
@@ -19,10 +28,18 @@ class UDPDevice:
         self.pkt_header = None
         self.pkt_footer = None
         self.stop_flag = False
+        self.stop_event = threading.Event()
+        self.error_times = {}
+        self.error_lock = threading.Lock()
+        self.logger = logging.getLogger(__name__)
 
     def start(self):
         self.last_message = millis() - 1000
         self.stop_flag = False
+        self.stop_event.clear()
+        # Bind before either thread can send and implicitly claim an ephemeral
+        # port. A port collision is a configuration error, not a network outage.
+        self.port.bind(("", self.remote_portnum))
 
         self.receive_thr = threading.Thread(
             target=self.receive_thread, args=(), daemon=True
@@ -36,34 +53,45 @@ class UDPDevice:
 
     def stop(self):
         self.stop_flag = True
+        self.stop_event.set()
         self.port.close()
 
-    def receive_thread(self):
-        try:
-            self.port.bind(("", self.remote_portnum))
-        except OSError:
-            print("Cannot bind!")
+    def network_error(self, operation, error):
+        if self.stop_flag:
+            return
+        if error.errno not in NETWORK_ERRORS:
+            raise error
+        key = (operation, error.errno)
+        now = time.monotonic()
+        with self.error_lock:
+            if now - self.error_times.get(key, float('-inf')) < 5.0:
+                return
+            self.error_times[key] = now
+        self.logger.warning('UDP %s to %s:%s failed: %s; retrying, no datagrams queued',
+                            operation, self.remote, self.portnum, error)
 
-        try:
-            self.port.connect((self.remote, self.portnum))
-        except OSError:
-            print("Cannot open port!")
-            exit(-1)
+    def receive_thread(self):
+        while not self.stop_flag:
+            try:
+                self.port.connect((self.remote, self.portnum))
+                break
+            except OSError as error:
+                self.network_error('connect', error)
+                self.stop_event.wait(0.2)
 
         print("Receiving...")
 
         while not self.stop_flag:
             try:
                 data, _ = self.port.recvfrom(1024)
-            except TimeoutError:
+            except socket.timeout:
                 continue
-            except ConnectionRefusedError:
-                print("Connection refused!")
-                continue
-            except OSError:
+            except OSError as error:
                 if self.stop_flag:
                     break
-                raise
+                self.network_error('receive', error)
+                self.stop_event.wait(0.2)
+                continue
 
             if self.pkt_header != None:
                 if not data.startswith(self.pkt_header):
@@ -107,10 +135,10 @@ class UDPDevice:
                     self.port.connect((self.remote, self.portnum))
                 elif self.ping:
                     self.send("ok")
-            except ConnectionRefusedError:
-                print("Connection refused!")
+            except OSError as error:
+                self.network_error('keepalive', error)
 
-            time.sleep(0.2)
+            self.stop_event.wait(0.2)
 
     def process(self, tokens):
         pass
@@ -127,5 +155,7 @@ class UDPDevice:
         
         try:
             self.port.sendto(send_data, (self.remote, self.portnum))
-        except ConnectionRefusedError:
-            print("Connection refused!")
+            return True
+        except OSError as error:
+            self.network_error('send', error)
+            return False

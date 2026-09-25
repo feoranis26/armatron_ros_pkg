@@ -74,6 +74,19 @@ class DriveSafetyTest(unittest.TestCase):
         with patch('time.monotonic', return_value=100.), patch('time.time', return_value=100.):
             node.tick()  # No motion-consistency heartbeat required.
             node.driver.drive.assert_called_with(0.4, 0.2, 0.1)
+            node.driver.drive.return_value = False
+            node.tick()  # A denied UDP send drops the old motion command.
+            self.assertTrue(node.motion_blocked)
+            self.assertEqual(node.tgt_speed, [0., 0., 0.])
+            node.driver.drive.return_value = True
+            node.tick()  # Recovery sends zero even with healthy telemetry.
+            node.driver.drive.assert_called_with(0., 0., 0.)
+            self.assertFalse(node.motion_blocked)
+            command = Twist()
+            command.linear.x = 0.15
+            node.on_vel_msg_received(command)
+            node.tick()  # Only new command input resumes motion.
+            node.driver.drive.assert_called_with(0.15, 0., 0.)
             node.gyro.sample = (120., 100.)
             node.gyro_imu.tracking_valid = False
             node.gyro_imu.rejections = 1

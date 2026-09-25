@@ -1,7 +1,7 @@
 [Unit]
 Description=ARMATRON ROS-to-motion-controller bridge
-After=network-online.target
-Wants=network-online.target
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
 
 [Service]
 Type=simple
